@@ -4,6 +4,12 @@ metadata:
   name: prometheus
   namespace: argocd
 spec:
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      name: prometheusagents.monitoring.coreos.com
+      jsonPointers:
+        - /metadata/annotations
   project: default
   source:
     repoURL: https://prometheus-community.github.io/helm-charts
@@ -25,6 +31,8 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true
+
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -56,6 +64,7 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
