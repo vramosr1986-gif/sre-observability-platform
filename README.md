@@ -18,7 +18,7 @@ Todo el proyecto está gestionado como código y actualmente se encuentra **en d
 
 🟡 **Proyecto en desarrollo**
 
-La infraestructura principal ya está desplegada y funcionando. Actualmente el proyecto se encuentra en la fase de configuración de alertas, automatización y auto-remediación.
+La infraestructura principal está desplegada y funcionando, incluida la primera tanda de reglas de alerta propias. Quedan pendientes el datasource y el dashboard de Grafana, y todo el bloque de event-driven automation y auto-remediación.
 
 ### Objetivos cumplidos
 
@@ -26,7 +26,7 @@ La infraestructura principal ya está desplegada y funcionando. Actualmente el p
 * [x] Crear estructura base del proyecto
 * [x] Crear namespaces de Kubernetes
 * [x] Instalar ArgoCD
-* [x] Configurar GitOps con ArgoCD
+* [x] Configurar GitOps con ArgoCD (App-of-Apps)
 * [x] Desplegar aplicación de demostración
 * [x] Instalar Nginx Ingress
 * [x] Instalar Prometheus
@@ -38,17 +38,16 @@ La infraestructura principal ya está desplegada y funcionando. Actualmente el p
 * [x] Configurar monitorización de Kubernetes
 * [x] Comprobar targets de Prometheus
 * [x] Comprobar métricas mediante PromQL
-* [x] Configurar datasource de Prometheus en Grafana
-* [x] Crear dashboard inicial de Grafana
+* [x] Crear reglas de alerta propias con `PrometheusRule` (`HighCPU`, `HighMemory`)
 * [x] Verificar despliegues mediante ArgoCD
 
 ### Objetivos pendientes
 
-* [ ] Crear reglas de alerta personalizadas con `PrometheusRule`
-* [ ] Crear alertas en Grafana
-* [ ] Configurar correctamente los grupos de reglas
-* [ ] Conectar Alertmanager con EDA
+* [ ] Configurar el datasource de Prometheus en Grafana
+* [ ] Crear dashboard inicial de Grafana
+* [ ] Añadir alertas en Grafana
 * [ ] Configurar webhooks de Alertmanager
+* [ ] Conectar Alertmanager con EDA
 * [ ] Crear `ansible-rulebook`
 * [ ] Crear playbooks de remediación con Ansible
 * [ ] Probar el flujo completo de auto-remediación
@@ -65,6 +64,11 @@ La infraestructura principal ya está desplegada y funcionando. Actualmente el p
 * [ ] Añadir tests de infraestructura
 * [ ] Mejorar seguridad de credenciales
 * [ ] Evaluar despliegue en cloud (AWS, Azure o GCP)
+
+> **Nota sobre Grafana:** el dashboard de la captura de abajo se creó cuando Grafana venía
+> dentro de `kube-prometheus-stack`, que lo aprovisionaba automáticamente. Ahora Grafana se
+> despliega como aplicación independiente (chart `grafana` 7.0.19), y por eso el datasource y
+> el dashboard **no** están. Actualmente hay que configurarlos a mano.
 
 ---
 
@@ -85,6 +89,7 @@ Aplicaciones gestionadas mediante GitOps y sincronizadas desde Git.
 ### Grafana — Dashboard
 
 Dashboard inicial para visualizar las métricas de la infraestructura Kubernetes.
+*Captura del despliegue anterior a la separación de Grafana como app independiente.*
 
 ![Grafana Dashboard](docs/screenshots/grafana-dashboard.jpeg)
 
@@ -105,62 +110,88 @@ Estado de los pods desplegados en el cluster.
 ## Arquitectura
 
 ```text
-                    ┌──────────────────┐
-                    │      Usuario     │
-                    └────────┬─────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              │              │              │
-              ▼              ▼              ▼
-       ┌──────────┐    ┌──────────┐    ┌──────────┐
-       │  ArgoCD  │    │ Grafana  │    │ demo-app │
-       └──────────┘    └────┬─────┘    └──────────┘
-                            │
-                            ▼
-                     ┌───────────┐
-                     │ Prometheus│
-                     └─────┬─────┘
-                           │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-        ┌──────────┐ ┌──────────┐ ┌──────────┐
-        │  Node    │ │  Node    │ │  Node    │
-        │ Exporter │ │ Exporter │ │ Exporter │
-        └──────────┘ └──────────┘ └──────────┘
-                           │
-                           │ alertas
-                           ▼
-                    ┌───────────────┐
-                    │  Alertmanager │
-                    └───────┬───────┘
-                            │ webhook
-                            ▼
-                    ┌───────────────┐
-                    │      EDA      │
-                    └───────┬───────┘
-                            │ ejecuta
-                            ▼
-                    ┌───────────────┐
-                    │    Ansible    │
-                    └───────────────┘
+                          ┌─────────────────────┐
+                          │        GitHub       │
+                          │  fuente de verdad   │
+                          └──────────┬──────────┘
+                                     │  pull cada ~3 min
+                                     ▼
+┌──────────────────┐       ┌─────────────────────┐
+│      Usuario     │──────▶│      ArgoCD        │
+└──────────────────┘       └──────────┬──────────┘
+                                      │  renderiza charts
+                    ┌─────────────────┼─────────────────┐
+                    ▼                 ▼                 ▼
+             ┌────────────┐   ┌────────────┐   ┌────────────┐
+             │     App    │   │     App    │   │     App    │
+             │ prometheus │   │  grafana   │   │  demo-app  │
+             └─────┬──────┘   └──────┬─────┘   └────────────┘
+                   │                 │
+                   │          ┌──────▼─────┐
+                   │          │  Ingress   │
+                   │          │  (nginx)   │
+                   │          └──────┬─────┘
+                   │                 │
+     ┌─────────────┼───────────┐     │
+     │             │           │     │
+     ▼             ▼           ▼     ▼
+┌─────────┐  ┌────────────┐  ┌────────────┐  ┌────────┐
+│  Alert  │  │ Prometheus │  │ kube-state │  │demo-app│
+│ manager │  │            │  │  -metrics  │  │        │
+└────┬────┘  └─────┬──────┘  └────────────┘  └────────┘
+     │            │
+     │  scrape    │
+     │            ▼
+     │      ┌───────────┐
+     │      │  3 × Node │  (1 server + 2 agents)
+     │      │  Exporter │
+     │      └───────────┘
+     │
+     │  webhook
+     ▼
+┌────────────┐
+│     EDA    │   ← pendiente
+└─────┬──────┘
+      │  ejecuta
+      ▼
+┌────────────┐
+│   Ansible  │   ← pendiente
+└────────────┘
 ```
+
+### Cómo encaja el App-of-Apps
+
+`root-app` no instala Prometheus: instala las **Applications** que instalan Prometheus. Hay
+dos capas, cada una con su propio ciclo de sincronización:
+
+```text
+bootstrap/root-app.yaml
+   └─ Application/root-app          (lee la carpeta bootstrap/ de Git)
+        ├─ Application/prometheus   (chart kube-prometheus-stack 55.0.0 → ns observability)
+        ├─ Application/grafana      (chart grafana 7.0.19            → ns observability)
+        ├─ Application/demo-app     (chart local                     → ns applications)
+        └─ los 3 Namespaces
+```
+
+Un único sentido de cambio: **Git → cluster**. Si editas algo con `kubectl edit`, Argo lo
+sobrescribe con la versión de Git en cuanto lo detecta (`selfHeal: true`).
 
 ---
 
 ## Stack
 
-| Capa                  | Tecnología                 | Para qué                       |
-| --------------------- | -------------------------- | ------------------------------ |
-| **Contenedores**      | Docker                     | Motor de contenedores          |
-| **Orquestación**      | Kubernetes (K3d)           | Cluster local                  |
-| **GitOps**            | ArgoCD                     | Despliegue desde Git           |
-| **Ingress**           | Nginx Ingress              | Exponer servicios              |
-| **Métricas**          | Prometheus + Node Exporter | Recoger métricas               |
-| **Estado Kubernetes** | kube-state-metrics         | Métricas de objetos Kubernetes |
-| **Dashboards**        | Grafana                    | Visualización                  |
-| **Alertas**           | Alertmanager               | Gestionar y enviar alertas     |
-| **Auto-remediación**  | EDA (ansible-rulebook)     | Decidir qué playbook ejecutar  |
-| **Remediación**       | Ansible                    | Ejecutar playbooks             |
+| Capa                  | Tecnología                 | Estado      | Para qué                       |
+| --------------------- | -------------------------- | ----------- | ------------------------------ |
+| **Contenedores**      | Docker                     | ✅ activo   | Motor de contenedores          |
+| **Orquestación**      | Kubernetes (K3d)           | ✅ activo   | Cluster local                  |
+| **GitOps**            | ArgoCD 3.5.3               | ✅ activo   | Despliegue desde Git           |
+| **Ingress**           | Nginx Ingress              | ✅ activo   | Exponer servicios              |
+| **Métricas**          | Prometheus + Node Exporter | ✅ activo   | Recoger métricas               |
+| **Estado Kubernetes** | kube-state-metrics         | ✅ activo   | Métricas de objetos Kubernetes |
+| **Dashboards**        | Grafana 10.2.2             | ⚠️ sin configurar | Visualización          |
+| **Alertas**           | Alertmanager               | ✅ activo   | Gestionar y enviar alertas     |
+| **Auto-remediación**  | EDA (ansible-rulebook)     | ⬜ pendiente | Decidir qué playbook ejecutar  |
+| **Remediación**       | Ansible                    | ⬜ pendiente | Ejecutar playbooks             |
 
 ---
 
@@ -168,18 +199,18 @@ Estado de los pods desplegados en el cluster.
 
 ```text
 sre-observability-platform/
-
+│
 ├── bootstrap/
-│   ├── bootstrap.sh
-│   ├── namespaces.yaml
-│   └── argocd-apps.yaml
+│   ├── bootstrap.sh          # crea el cluster e instala ArgoCD, CRDs e ingress
+│   ├── namespaces.yaml       # argocd, observability, applications
+│   ├── argocd-apps.yaml      # las 3 Applications hijas (prometheus, grafana, demo-app)
+│   └── root-app.yaml         # Application raíz (App-of-Apps)
 │
 ├── gitops/
 │   └── helm/
-│       └── demo-app/
+│       └── demo-app/         # chart local de la app de demostración
 │
 ├── docs/
-│   ├── ARQUITECTURA.md
 │   └── screenshots/
 │       ├── argocd-applications.jpeg
 │       ├── argocd-login.jpeg
@@ -187,10 +218,14 @@ sre-observability-platform/
 │       ├── kubernetes.jpeg
 │       └── prometeus-cpu-usage.jpeg
 │
-├── k3d-config.yaml
-├── README.md
-└── .gitignore
+├── k3d-config.yaml           # 1 server + 2 agents, traefik deshabilitado
+└── README.md
 ```
+
+> **Las CRDs del Prometheus Operator no están en el repo a propósito.** `bootstrap.sh` las
+> descarga del chart publicado en el paso 8 y las aplica con `kubectl apply --server-side`, y
+> ArgoCD gestiona el chart con `helm.skipCrds: true` para no adoptarlas. Si las metieras en
+> Git, Argo pelearía con el operator por su property.
 
 ---
 
@@ -204,52 +239,83 @@ cd sre-observability-platform
 ./bootstrap/bootstrap.sh
 ```
 
-El despliegue tarda aproximadamente 3-4 minutos en levantar:
+> **Requiere WSL o Linux.** El cluster k3d corre dentro de Docker en WSL, así que `k3d`,
+> `helm` y `kubectl` deben estar disponibles **dentro de WSL**, no en PowerShell.
 
-* Cluster K3d
-* ArgoCD
-* Nginx Ingress
-* Prometheus
-* Grafana
-* Alertmanager
-* kube-state-metrics
-* Node Exporter
-* demo-app
+El script es idempotente: si el cluster ya existe, lo borra y lo recrea desde cero. Levanta:
+
+1. Cluster K3d (1 server + 2 agents)
+2. Namespaces
+3. ArgoCD
+4. **CRDs del Prometheus Operator** (descargadas del chart 55.0.0, aplicadas con server-side apply)
+5. Nginx Ingress
+6. `root-app`, que a su vez sincroniza Prometheus, Grafana y demo-app
+
+La parte lenta es el paso 6: los charts tardan en renderizarse y Prometheus en ponerse *ready*.
+ArgoCD sincroniza cada ~3 minutos, así que **`root-app` puede marcar `Synced` antes de que
+`prometheus` termine**. Es normal ver `OutOfSync` durante el primer minuto.
+
+Para ver el estado cuando quieras:
+
+```bash
+kubectl get applications -n argocd
+```
+
+Lo que debes ver cuando todo ha asentado:
+
+```text
+NAME         SYNC STATUS   HEALTH STATUS
+demo-app     Synced        Healthy
+grafana      Synced        Healthy
+prometheus   Synced        Healthy
+root-app     Synced        Healthy
+```
 
 ---
 
 ## Cómo acceder
 
+### Vía Ingress (recomendado)
+
+| Servicio    | Host             | Notas                          |
+| ----------- | ---------------- | ------------------------------ |
+| **Grafana** | `grafana.local`  | usuario `admin`, clave `admin` |
+| **demo-app**| `demo-app.local` | sin autenticación              |
+
+El ingress de nginx escucha en la IP del loadbalancer. Para resolver los nombres en local,
+añade a tu `hosts` de Windows:
+
+```text
+172.19.0.3   grafana.local
+172.19.0.3   demo-app.local
+```
+
+La IP puede cambiar en cada recreación del cluster; consíguela con:
+
+```bash
+kubectl get ingress -n observability grafana -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+```
+
+### Vía port-forward
+
 | Servicio       | Comando                                                                                     | URL                    |
 | -------------- | ------------------------------------------------------------------------------------------- | ---------------------- |
 | **ArgoCD**     | `kubectl port-forward svc/argocd-server -n argocd 9090:443`                                 | https://localhost:9090 |
-| **Grafana**    | `kubectl port-forward svc/prometheus-grafana -n observability 3000:80`                      | http://localhost:3000  |
+| **Grafana**    | `kubectl port-forward svc/grafana -n observability 3000:80`                                  | http://localhost:3000  |
 | **Prometheus** | `kubectl port-forward svc/prometheus-kube-prometheus-prometheus -n observability 9090:9090` | http://localhost:9090  |
 | **demo-app**   | `kubectl port-forward svc/demo-app -n applications 8080:80`                                 | http://localhost:8080  |
 
-### Credenciales
+### Credenciales de ArgoCD
 
-**ArgoCD**
-
-Usuario:
-
-```text
-admin
-```
-
-Contraseña:
+Usuario `admin`. La contraseña se genera en el arranque del cluster:
 
 ```bash
 kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath="{.data.password}" | base64 -d; echo
 ```
 
-**Grafana**
-
-```text
-Usuario: admin
-Contraseña: admin
-```
+> Esta contraseña **solo existe hasta el primer arranque** de ArgoCD. Como `bootstrap.sh`
+> recrea el cluster cada vez, cambia en cada despliegue.
 
 ---
 
@@ -269,96 +335,104 @@ Actualmente se encuentran disponibles métricas de:
 * Alertmanager
 * Prometheus Operator
 
-Los targets pueden comprobarse mediante:
+Comprobar el estado de los targets desde la UI de Prometheus, o por CLI:
 
-```promql
-up
+```bash
+PROM=$(kubectl get pod -n observability -l app.kubernetes.io/name=prometheus \
+  -o jsonpath='{.items[0].metadata.name}')
+
+kubectl exec -n observability "$PROM" -c prometheus -- \
+  wget -qO- 'http://localhost:9090/api/v1/query?query=count(up%20%3D%3D%201)'
 ```
 
-Los targets con valor:
-
-```text
-1
-```
-
-están siendo monitorizados correctamente.
+Los targets con valor `1` en la consulta `up` están siendo monitorizados correctamente.
 
 ---
 
 ## Alertas
 
-La infraestructura de Prometheus y Alertmanager ya está desplegada.
+Ya existen **dos reglas de alerta propias**, definidas en `bootstrap/argocd-apps.yaml` dentro
+de `additionalPrometheusRulesMap` y desplegadas como objetos `PrometheusRule`:
 
-La creación de reglas de alerta personalizadas se encuentra actualmente pendiente.
+| Alerta       | Namespace | Qué detecta                                       |
+| ------------ | --------- | ------------------------------------------------- |
+| `HighCPU`    | `cpu`     | CPU > 80% sostenida 5 min por instancia           |
+| `HighMemory` | `memory`  | Memoria usada > 80% del total durante 5 min       |
 
-El objetivo es implementar reglas como:
-
-```text
-TargetDown
-PodCrashLooping
-PodNotReady
-HighCPUUsage
-HighMemoryUsage
-NodeNotReady
-DeploymentReplicasMismatch
+```yaml
+additionalPrometheusRulesMap:
+  high-cpu-alert:
+    groups:
+      - name: cpu
+        rules:
+          - alert: HighCPU
+            expr: |
+              100 - (
+                avg by(instance) (
+                  rate(node_cpu_seconds_total{mode="idle"}[5m])
+                ) * 100
+              ) > 80
+            for: 5m
+            labels:
+              severity: warning
 ```
 
-El flujo previsto es:
+Verificar que están cargadas y evaluándose:
+
+```bash
+PROM=$(kubectl get pod -n observability -l app.kubernetes.io/name=prometheus \
+  -o jsonpath='{.items[0].metadata.name}')
+
+kubectl exec -n observability "$PROM" -c prometheus -- \
+  wget -qO- 'http://localhost:9090/api/v1/rules'
+```
+
+`state=inactive` con `health=ok` significa que la regla existe y se evalúa, pero su
+condición no se cumple. Eso es lo esperado en un cluster sano.
+
+> **Ruido esperado en K3d:** las reglas `KubeControllerManagerDown`, `KubeProxyDown` y
+> `KubeSchedulerDown` del propio chart salen perpetually en `firing`. K3d es un cluster de un
+> solo nodo y no expone esos componentes del control plane, así que **no es un fallo**.
+> Las alertas propias (`HighCPU`, `HighMemory`) están correctamente inactivas.
+
+### Flujo previsto
 
 ```text
-Prometheus
-    │
-    │ alerta
-    ▼
-Alertmanager
-    │
-    │ webhook
-    ▼
-EDA
-    │
-    │ evento
-    ▼
-Ansible
-    │
-    │ playbook
-    ▼
-Remediación
+Prometheus  ──alerta──▶  Alertmanager  ──webhook──▶  EDA  ──▶  Ansible
+                            (✅ activo)                  (⬜ pendiente)
 ```
 
 ---
 
 ## Auto-remediación
 
-La auto-remediación es una de las partes principales del proyecto, pero todavía está en desarrollo.
-
-El objetivo es que una incidencia detectada por Prometheus pueda desencadenar automáticamente una acción correctiva.
-
-Ejemplo:
+La auto-remediación es una de las partes principales del proyecto, pero todavía está en
+desarrollo. El objetivo es que una incidencia detectada por Prometheus pueda desencadenar
+automáticamente una acción correctiva.
 
 ```text
-Pod problemático
+Métrica anormal
       │
       ▼
-Prometheus detecta la métrica
+Prometheus evalúa la regla
       │
       ▼
-PrometheusRule
+PrometheusRule  (✅ ya existe: HighCPU / HighMemory)
       │
       ▼
-Alertmanager
+Alertmanager   (✅ desplegado)
       │
       ▼
-EDA
+EDA            (⬜ pendiente)   ansible-rulebook decide la acción
       │
       ▼
-Ansible
-      │
-      ▼
-Playbook de remediación
+Ansible        (⬜ pendiente)   ejecuta el playbook
       │
       ▼
 Incidencia corregida
 ```
+
+Las piezas de detección están operativas; falta el bloque de event-driven automation.
 
 ---
 
@@ -367,6 +441,7 @@ Incidencia corregida
 * **Kubernetes**: pods, services, namespaces, ingress, CRDs y StatefulSets
 * **K3d**: Kubernetes dentro de Docker
 * **GitOps con ArgoCD**: sincronización desde Git, `selfHeal` y `prune`
+* **App-of-Apps**: una Application raíz que gestiona otras Applications
 * **Helm**: charts, values y templates
 * **Prometheus**: métricas, PromQL, ServiceMonitors y PrometheusRules
 * **Grafana**: dashboards y data sources
@@ -375,11 +450,26 @@ Incidencia corregida
 * **EDA**: `ansible-rulebook` y event-driven automation
 * **SRE**: observabilidad, alerting y automatización de operaciones
 
+### Dos trampas que costaron tiempo
+
+**`syncOptions` cambió de sitio en ArgoCD v3.** En v2.x era `spec.syncOptions`; desde v3 la
+ruta válida es `spec.syncPolicy.syncOptions`. Con el layout antiguo, el API server hace
+*structural schema pruning* y **descarta el campo en silencio**, así que Git siempre declara
+algo que el cluster no tiene. El síntoma es un `root-app` que se queda `OutOfSync` para
+siempre con un bucle de autosync que nunca converge, mientras Argo reporta
+`successfully synced`. La pista está en el log del controller:
+
+```bash
+kubectl logs -n argocd argocd-application-controller-0 --since=5m | grep 'unknown field'
+```
+
+**Un bucle de reconciliación puede *parecer* sano.** El mensaje de éxito del sync se refiere
+a que la operación se ejecutó, no a que el cluster haya cambiado. La señal fiable es que
+`status.sync.status` llegue a `Synced` y **se quede** ahí.
+
 ---
 
 ## Próximos pasos
-
-El roadmap actual del proyecto es:
 
 ```text
 [x] Kubernetes / K3d
@@ -390,9 +480,9 @@ El roadmap actual del proyecto es:
 [x] Alertmanager
 [x] Node Exporter
 [x] kube-state-metrics
-[x] Dashboards
-[ ] PrometheusRules personalizadas
-[ ] Alertas
+[x] PrometheusRules propias (HighCPU, HighMemory)
+[ ] Datasource de Prometheus en Grafana
+[ ] Dashboards de Grafana
 [ ] Webhooks
 [ ] EDA
 [ ] Ansible
@@ -409,7 +499,9 @@ El roadmap actual del proyecto es:
 
 Este repositorio representa un **laboratorio SRE en evolución**.
 
-La infraestructura base y la monitorización ya están operativas, mientras que las funcionalidades avanzadas de alerting, event-driven automation y auto-remediación todavía están siendo implementadas.
+La infraestructura base, la monitorización y las primeras alertas propias ya están
+operativas, mientras que el datasource y los dashboards de Grafana, el event-driven
+automation y la auto-remediación siguen en implementación.
 
 El objetivo final es disponer de una plataforma capaz de:
 
@@ -420,7 +512,7 @@ Alertar
    ↓
 Analizar
    ↓
-Actuar
+Activar
    ↓
 Remediar
    ↓

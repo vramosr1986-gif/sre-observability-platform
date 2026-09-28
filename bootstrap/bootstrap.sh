@@ -15,6 +15,13 @@ ARGOCD_NAMESPACE="argocd"
 INGRESS_NAMESPACE="ingress-nginx"
 PROMETHEUS_CHART_VERSION="55.0.0"
 
+# Versiones fijadas a propósito.
+# No usar ramas móviles (stable/main): si upstream avanza, un rebuild trae versiones
+# distintas y el esquema del CRD de Application puede cambiar por debajo, lo que
+# reintroduce errores de pruning como el de spec.syncOptions.
+ARGOCD_VERSION="v3.5.3"
+INGRESS_NGINX_VERSION="controller-v1.15.1"
+
 # ============================================================
 # DEPENDENCIAS
 # ============================================================
@@ -109,7 +116,7 @@ echo ""
 kubectl apply \
     --server-side \
     -n "${ARGOCD_NAMESPACE}" \
-    -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+    -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
 
 echo ""
 echo "ArgoCD instalado."
@@ -194,7 +201,7 @@ echo "=== 9. Instalando Nginx Ingress ==="
 echo ""
 
 kubectl apply \
-    -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+    -f "https://raw.githubusercontent.com/kubernetes/ingress-nginx/${INGRESS_NGINX_VERSION}/deploy/static/provider/cloud/deploy.yaml"
 
 echo ""
 echo "Nginx Ingress instalado."
@@ -269,8 +276,53 @@ echo ""
 echo "=== 13. Esperando Applications hijas ==="
 echo ""
 
-sleep 10
+# root-app puede quedar Synced antes de que las hijas terminen. Sin esta espera el
+# script miente: declara exito mientras Prometheus sigue OutOfSync o Degraded.
+EXPECTED_APPS="prometheus grafana demo-app root-app"
+MAX_WAIT=180
+ELAPSED=0
 
+while true; do
+
+    PENDING=""
+
+    for APP in ${EXPECTED_APPS}; do
+
+        SYNC=$(kubectl get application "${APP}" \
+            -n "${ARGOCD_NAMESPACE}" \
+            -o jsonpath='{.status.sync.status}' \
+            2>/dev/null || true)
+
+        HEALTH=$(kubectl get application "${APP}" \
+            -n "${ARGOCD_NAMESPACE}" \
+            -o jsonpath='{.status.health.status}' \
+            2>/dev/null || true)
+
+        if [ "${SYNC}" != "Synced" ] || [ "${HEALTH}" != "Healthy" ]; then
+            PENDING="${PENDING} ${APP}(${SYNC:-?} / ${HEALTH:-?})"
+        fi
+
+    done
+
+    if [ -z "${PENDING}" ]; then
+        echo "Todas las Applications están Synced y Healthy."
+        break
+    fi
+
+    if [ "${ELAPSED}" -ge "${MAX_WAIT}" ]; then
+        echo "AVISO: tras ${MAX_WAIT}s siguen sin converger:${PENDING}"
+        echo "       Es normal que Prometheus tarde varios minutos en el primer despliegue."
+        echo "       Revisa el progreso con: kubectl get applications -n ${ARGOCD_NAMESPACE}"
+        break
+    fi
+
+    printf "  [%3ds] pendiente:%s\n" "${ELAPSED}" "${PENDING}"
+    sleep 15
+    ELAPSED=$((ELAPSED + 15))
+
+done
+
+echo ""
 kubectl get applications \
     -n "${ARGOCD_NAMESPACE}"
 
