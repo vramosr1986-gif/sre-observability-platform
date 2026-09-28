@@ -94,11 +94,11 @@ Consulta de métricas de utilización de CPU mediante PromQL.
 
 ![Prometheus CPU Usage](docs/screenshots/prometeus-cpu-usage.jpeg)
 
-### Kubernetes — Pods
+### Kubernetes
 
 Estado de los pods desplegados en el cluster.
 
-![Kubernetes Pods](docs/screenshots/kubernetes.jpeg)
+![Kubernetes ](docs/screenshots/kubernetes.jpeg)
 
 ---
 
