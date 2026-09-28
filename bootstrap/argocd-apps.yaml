@@ -20,7 +20,11 @@ spec:
     targetRevision: 55.0.0
 
     helm:
+      skipCrds: true
       values: |
+        crds:
+          enabled: false
+
         grafana:
           enabled: false
 
@@ -29,7 +33,6 @@ spec:
             retention: 7d
 
         additionalPrometheusRulesMap:
-
           high-cpu-alert:
             groups:
               - name: cpu
@@ -42,10 +45,8 @@ spec:
                         ) * 100
                       ) > 80
                     for: 5m
-
                     labels:
                       severity: warning
-
                     annotations:
                       summary: "CPU alta en {{ $labels.instance }}"
                       description: "Uso de CPU superior al 80% durante 5 minutos en {{ $labels.instance }}"
@@ -64,10 +65,8 @@ spec:
                         )
                       ) * 100 > 80
                     for: 5m
-
                     labels:
                       severity: warning
-
                     annotations:
                       summary: "Memoria alta en {{ $labels.instance }}"
                       description: "Uso de memoria superior al 80% durante 5 minutos en {{ $labels.instance }}"
