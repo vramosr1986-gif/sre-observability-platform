@@ -7,6 +7,12 @@ metadata:
 spec:
   project: default
 
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jsonPointers:
+        - /metadata/annotations
+
   source:
     repoURL: https://github.com/vramosr1986-gif/sre-observability-platform.git
     targetRevision: main
