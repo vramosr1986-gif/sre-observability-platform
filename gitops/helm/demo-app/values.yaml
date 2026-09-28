@@ -1,0 +1,44 @@
+# ============================================================
+# Valores del chart demo-app
+# Estos valores se pueden sobreescribir desde fuera.
+# ============================================================
+
+replicaCount: 2
+
+image:
+  repository: nginx
+  tag: "1.25-alpine"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  host: demo-app.local
+  path: /
+  pathType: Prefix
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+# Contenido HTML personalizado
+html: |
+  <!DOCTYPE html>
+  <html>
+  <head>
+      <title>Demo App - SRE Observability Platform</title>
+  </head>
+  <body>
+      <h1>¡Funciona!</h1>
+      <p>Esta app está desplegada con Helm y ArgoCD.</p>
+      <p>Proyecto: sre-observability-platform</p>
+  </body>
+  </html>
