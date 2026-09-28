@@ -528,9 +528,9 @@ echo "Levantando port-forwards en segundo plano..."
 echo ""
 
 # 8080 y 8443 los usa k3d para el loadbalancer, por eso se esquivan.
-start_forward "argocd"     "${ARGOCD_NAMESPACE}" "argocd-server"                          443  9091
+start_forward "argocd"     "${ARGOCD_NAMESPACE}" "argocd-server"                          443  9090
 start_forward "grafana"    "observability"      "grafana"                                  80  3000
-start_forward "prometheus" "observability"      "prometheus-kube-prometheus-prometheus"  9090  9090
+start_forward "prometheus" "observability"      "prometheus-kube-prometheus-prometheus"  9090  9091
 start_forward "alertmgr"   "observability"      "prometheus-kube-prometheus-alertmanager" 9093 9093
 start_forward "demo-app"   "applications"       "demo-app"                                 80  8082
 

@@ -308,9 +308,9 @@ cat /tmp/sre-lab-portforwards.map
 
 | Servicio       | Puerto por defecto | URL                    |
 | -------------- | ------------------ | ---------------------- |
-| **ArgoCD**     | 9091               | https://localhost:9091 |
+| **ArgoCD**     | 9090               | https://localhost:9090 |
 | **Grafana**    | 3000               | http://localhost:3000  |
-| **Prometheus** | 9090               | http://localhost:9090  |
+| **Prometheus** | 9091               | http://localhost:9091  |
 | **Alertmanager** | 9093             | http://localhost:9093  |
 | **demo-app**   | 8082               | http://localhost:8082  |
 
