@@ -103,6 +103,23 @@ spec:
       values: |
         adminPassword: admin
 
+        # Sin un datasource, los dashboards de kube-prometheus-stack se quedan en
+        # "No data": referencian la variable ${ds_prometheus} y no hay nada que
+        # resolver. La URL es el Service de Prometheus del mismo namespace.
+        datasources:
+          datasources.yaml:
+            apiVersion: 1
+            datasources:
+              - name: Prometheus
+                type: prometheus
+                uid: prometheus
+                access: proxy
+                url: http://prometheus-kube-prometheus-prometheus.observability.svc.cluster.local:9090
+                isDefault: true
+                editable: false
+                jsonData:
+                  timeInterval: 30s
+
         service:
           type: ClusterIP
 
