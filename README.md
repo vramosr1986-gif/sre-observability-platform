@@ -21,9 +21,6 @@ Todo el proyecto está gestionado como código.
 ![ArgoCD](docs/screenshots/argocd-applications.jpeg)
 
 
-### Kubernetes ### Kubernetes — Pods
-
-![Kubernetes Pods](docs/screenshots/kubectl-pods.jpeg)
 
 ---
 
