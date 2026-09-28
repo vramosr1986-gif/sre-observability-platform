@@ -199,10 +199,16 @@ fi
 
 echo "  CRDs encontradas: $(echo "${CRD_FILES}" | wc -l)"
 
-echo "${CRD_FILES}" | xargs -r kubectl apply \
+# kubectl apply solo admite un valor por -f, asi que se repite la flag.
+CRD_ARGS=()
+while IFS= read -r CRD_FILE; do
+    CRD_ARGS+=(-f "${CRD_FILE}")
+done <<< "${CRD_FILES}"
+
+kubectl apply \
     --server-side \
     --force-conflicts \
-    -f
+    "${CRD_ARGS[@]}"
 
 echo ""
 echo "CRDs de Prometheus Operator instalados correctamente."
