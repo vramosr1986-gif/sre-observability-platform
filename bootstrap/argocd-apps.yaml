@@ -10,42 +10,77 @@ spec:
       name: prometheusagents.monitoring.coreos.com
       jsonPointers:
         - /metadata/annotations
+
   project: default
+
   source:
     repoURL: https://prometheus-community.github.io/helm-charts
     chart: kube-prometheus-stack
     targetRevision: 55.0.0
+
     helm:
       values: |
         grafana:
           enabled: false
+
         prometheus:
           prometheusSpec:
             retention: 7d
-            additionalPrometheusRulesMap:
-              high-cpu-alert:
-                groups:
-                  - name: custom
-                    rules:
-                      - alert: HighCPU
-                        expr: |
-                          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
-                        for: 5m
-                        labels:
-                          severity: warning
-                        annotations:
-                          summary: "CPU alta en {{ $labels.instance }}"
-                          description: "Uso de CPU > 80% durante 5 min en {{ $labels.instance }}"
+
+        additionalPrometheusRulesMap:
+
+          high-cpu-alert:
+            groups:
+              - name: custom
+                rules:
+                  - alert: HighCPU
+                    expr: |
+                      100 - (
+                        avg by(instance) (
+                          rate(node_cpu_seconds_total{mode="idle"}[5m])
+                        ) * 100
+                      ) > 80
+                    for: 5m
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "CPU alta en {{ $labels.instance }}"
+                      description: "Uso de CPU superior al 80% durante 5 minutos en {{ $labels.instance }}"
+
+          high-memory-alert:
+            groups:
+              - name: memory
+                rules:
+                  - alert: HighMemory
+                    expr: |
+                      (
+                        1 - (
+                          node_memory_MemAvailable_bytes
+                          /
+                          node_memory_MemTotal_bytes
+                        )
+                      ) * 100 > 80
+                    for: 5m
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "Memoria alta en {{ $labels.instance }}"
+                      description: "Uso de memoria superior al 80% durante 5 minutos en {{ $labels.instance }}"
+
   destination:
     server: https://kubernetes.default.svc
     namespace: observability
+
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+
+
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -54,29 +89,38 @@ metadata:
   namespace: argocd
 spec:
   project: default
+
   source:
     repoURL: https://grafana.github.io/helm-charts
     chart: grafana
     targetRevision: 7.0.19
+
     helm:
       values: |
         adminPassword: admin
+
         service:
           type: ClusterIP
+
         ingress:
           enabled: true
           ingressClassName: nginx
           hosts:
             - grafana.local
+
   destination:
     server: https://kubernetes.default.svc
     namespace: observability
+
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+
     syncOptions:
       - CreateNamespace=true
+
+
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -85,16 +129,20 @@ metadata:
   namespace: argocd
 spec:
   project: default
+
   source:
     repoURL: https://github.com/vramosr1986-gif/sre-observability-platform.git
     targetRevision: main
     path: gitops/helm/demo-app
+
   destination:
     server: https://kubernetes.default.svc
     namespace: applications
+
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+
     syncOptions:
       - CreateNamespace=true
