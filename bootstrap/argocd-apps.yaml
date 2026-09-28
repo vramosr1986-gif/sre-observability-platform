@@ -16,7 +16,7 @@ spec:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:D
+    syncOptions:
       - CreateNamespace=true
 ---
 apiVersion: argoproj.io/v1alpha1
