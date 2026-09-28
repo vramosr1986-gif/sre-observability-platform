@@ -298,12 +298,34 @@ kubectl get ingress -n observability grafana -o jsonpath='{.status.loadBalancer.
 
 ### Vía port-forward
 
-| Servicio       | Comando                                                                                     | URL                    |
-| -------------- | ------------------------------------------------------------------------------------------- | ---------------------- |
-| **ArgoCD**     | `kubectl port-forward svc/argocd-server -n argocd 9090:443`                                 | https://localhost:9090 |
-| **Grafana**    | `kubectl port-forward svc/grafana -n observability 3000:80`                                  | http://localhost:3000  |
-| **Prometheus** | `kubectl port-forward svc/prometheus-kube-prometheus-prometheus -n observability 9090:9090` | http://localhost:9090  |
-| **demo-app**   | `kubectl port-forward svc/demo-app -n applications 8080:80`                                 | http://localhost:8080  |
+`bootstrap.sh` ya los lanza **en segundo plano** al final y abre ArgoCD en el navegador,
+así que la terminal queda libre para seguir usándose. Para ver qué puerto acabó
+sirviendo cada aplicación:
+
+```bash
+cat /tmp/sre-lab-portforwards.map
+```
+
+| Servicio       | Puerto por defecto | URL                    |
+| -------------- | ------------------ | ---------------------- |
+| **ArgoCD**     | 9091               | https://localhost:9091 |
+| **Grafana**    | 3000               | http://localhost:3000  |
+| **Prometheus** | 9090               | http://localhost:9090  |
+| **Alertmanager** | 9093             | http://localhost:9093  |
+| **demo-app**   | 8082               | http://localhost:8082  |
+
+> Si un puerto ya está ocupado (por ejemplo, porque tienes otro `port-forward` vivo), el
+> script busca el siguiente libre y avisa por pantalla. Consulta siempre el fichero
+> `.map` para saber el puerto real.
+
+Para pararlos todos:
+
+```bash
+bash bootstrap/stop-portforwards.sh
+```
+
+ArgoCD usa certificado autofirmado, así que el navegador mostrará un aviso de
+seguridad. Es esperado: pulsa **Advanced → Proceed**.
 
 ### Credenciales de ArgoCD
 
