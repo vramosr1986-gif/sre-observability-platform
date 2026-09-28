@@ -3,15 +3,16 @@ kind: Application
 metadata:
   name: prometheus
   namespace: argocd
+
 spec:
+  project: default
+
   ignoreDifferences:
     - group: apiextensions.k8s.io
       kind: CustomResourceDefinition
       name: prometheusagents.monitoring.coreos.com
       jsonPointers:
         - /metadata/annotations
-
-  project: default
 
   source:
     repoURL: https://prometheus-community.github.io/helm-charts
@@ -41,8 +42,10 @@ spec:
                         ) * 100
                       ) > 80
                     for: 5m
+
                     labels:
                       severity: warning
+
                     annotations:
                       summary: "CPU alta en {{ $labels.instance }}"
                       description: "Uso de CPU superior al 80% durante 5 minutos en {{ $labels.instance }}"
@@ -61,8 +64,10 @@ spec:
                         )
                       ) * 100 > 80
                     for: 5m
+
                     labels:
                       severity: warning
+
                     annotations:
                       summary: "Memoria alta en {{ $labels.instance }}"
                       description: "Uso de memoria superior al 80% durante 5 minutos en {{ $labels.instance }}"
@@ -76,9 +81,9 @@ spec:
       prune: true
       selfHeal: true
 
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
+  syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true
 
 
 ---
@@ -87,6 +92,7 @@ kind: Application
 metadata:
   name: grafana
   namespace: argocd
+
 spec:
   project: default
 
@@ -105,6 +111,7 @@ spec:
         ingress:
           enabled: true
           ingressClassName: nginx
+
           hosts:
             - grafana.local
 
@@ -117,8 +124,8 @@ spec:
       prune: true
       selfHeal: true
 
-    syncOptions:
-      - CreateNamespace=true
+  syncOptions:
+    - CreateNamespace=true
 
 
 ---
@@ -127,6 +134,7 @@ kind: Application
 metadata:
   name: demo-app
   namespace: argocd
+
 spec:
   project: default
 
@@ -144,5 +152,5 @@ spec:
       prune: true
       selfHeal: true
 
-    syncOptions:
-      - CreateNamespace=true
+  syncOptions:
+    - CreateNamespace=true
