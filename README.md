@@ -23,7 +23,7 @@ Todo el proyecto está gestionado como código.
 
 ### Kubernetes ### Kubernetes
 
-![Kubernetes Pods](docs/screenshots/kubernetesjpeg)
+![Kubernetes Pods](docs/screenshots/kubernetes.jpeg)
 
 ---
 
