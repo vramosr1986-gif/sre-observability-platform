@@ -31,7 +31,7 @@ spec:
 
           high-cpu-alert:
             groups:
-              - name: custom
+              - name: cpu
                 rules:
                   - alert: HighCPU
                     expr: |
