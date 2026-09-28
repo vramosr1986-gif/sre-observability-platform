@@ -102,6 +102,12 @@ Consulta de métricas de utilización de CPU mediante PromQL.
 
 ![Prometheus CPU Usage](docs/screenshots/prometeus-cpu-usage.jpeg)
 
+### Alertmanager — Alertas
+
+Alertas gestionadas por Alertmanager, con los grupos y firing rules del clúster.
+
+![Alertmanager](docs/screenshots/alertmanager.jpeg)
+
 ### Kubernetes
 
 Estado de los pods desplegados en el cluster.
@@ -216,6 +222,7 @@ sre-observability-platform/
 │
 ├── docs/
 │   └── screenshots/
+│       ├── alertmanager.jpeg
 │       ├── argocd-applications.jpeg
 │       ├── argocd-login.jpeg
 │       ├── grafana-dashboard.jpeg
