@@ -18,7 +18,7 @@ Todo el proyecto está gestionado como código y actualmente se encuentra **en d
 
 🟡 **Proyecto en desarrollo**
 
-La infraestructura principal está desplegada y funcionando, incluida la primera tanda de reglas de alerta propias. Quedan pendientes el datasource y el dashboard de Grafana, y todo el bloque de event-driven automation y auto-remediación.
+La infraestructura principal está desplegada y funcionando, incluida la primera tanda de reglas de alerta propias y el datasource de Prometheus en Grafana. Queda pendiente versionar el dashboard en Git, y todo el bloque de event-driven automation y auto-remediación.
 
 ### Objetivos cumplidos
 
@@ -39,12 +39,13 @@ La infraestructura principal está desplegada y funcionando, incluida la primera
 * [x] Comprobar targets de Prometheus
 * [x] Comprobar métricas mediante PromQL
 * [x] Crear reglas de alerta propias con `PrometheusRule` (`HighCPU`, `HighMemory`)
+* [x] Configurar el datasource de Prometheus en Grafana
 * [x] Verificar despliegues mediante ArgoCD
+* [x] Verificar el rebuild completo desde cero
 
 ### Objetivos pendientes
 
-* [ ] Configurar el datasource de Prometheus en Grafana
-* [ ] Crear dashboard inicial de Grafana
+* [ ] Versionar el dashboard de Grafana en Git
 * [ ] Añadir alertas en Grafana
 * [ ] Configurar webhooks de Alertmanager
 * [ ] Conectar Alertmanager con EDA
@@ -65,10 +66,12 @@ La infraestructura principal está desplegada y funcionando, incluida la primera
 * [ ] Mejorar seguridad de credenciales
 * [ ] Evaluar despliegue en cloud (AWS, Azure o GCP)
 
-> **Nota sobre Grafana:** el dashboard de la captura de abajo se creó cuando Grafana venía
-> dentro de `kube-prometheus-stack`, que lo aprovisionaba automáticamente. Ahora Grafana se
-> despliega como aplicación independiente (chart `grafana` 7.0.19), y por eso el datasource y
-> el dashboard **no** están. Actualmente hay que configurarlos a mano.
+> **Sobre el dashboard de Grafana:** la captura de abajo se creó cuando Grafana venía dentro
+> de `kube-prometheus-stack`, que lo aprovisionaba automáticamente. Ahora Grafana se despliega
+> como aplicación independiente (chart `grafana` 7.0.19). El **datasource** sí está provisionado
+> desde Git y sobrevive a cada rebuild, pero el **dashboard** se importó a mano y **no está
+> versionado**: al recrear el cluster hay que volver a importarlo. Ver
+> [Dashboards](#dashboards).
 
 ---
 
@@ -188,7 +191,7 @@ sobrescribe con la versión de Git en cuanto lo detecta (`selfHeal: true`).
 | **Ingress**           | Nginx Ingress              | ✅ activo   | Exponer servicios              |
 | **Métricas**          | Prometheus + Node Exporter | ✅ activo   | Recoger métricas               |
 | **Estado Kubernetes** | kube-state-metrics         | ✅ activo   | Métricas de objetos Kubernetes |
-| **Dashboards**        | Grafana 10.2.2             | ⚠️ sin configurar | Visualización          |
+| **Dashboards**        | Grafana 10.2.2             | ✅ activo   | Visualización               |
 | **Alertas**           | Alertmanager               | ✅ activo   | Gestionar y enviar alertas     |
 | **Auto-remediación**  | EDA (ansible-rulebook)     | ⬜ pendiente | Decidir qué playbook ejecutar  |
 | **Remediación**       | Ansible                    | ⬜ pendiente | Ejecutar playbooks             |
@@ -201,7 +204,8 @@ sobrescribe con la versión de Git en cuanto lo detecta (`selfHeal: true`).
 sre-observability-platform/
 │
 ├── bootstrap/
-│   ├── bootstrap.sh          # crea el cluster e instala ArgoCD, CRDs e ingress
+│   ├── bootstrap.sh          # crea el cluster, instala ArgoCD/CRDs/ingress y abre la UI
+│   ├── stop-portforwards.sh  # detiene los port-forward lanzados por el bootstrap
 │   ├── namespaces.yaml       # argocd, observability, applications
 │   ├── argocd-apps.yaml      # las 3 Applications hijas (prometheus, grafana, demo-app)
 │   └── root-app.yaml         # Application raíz (App-of-Apps)
@@ -250,10 +254,22 @@ El script es idempotente: si el cluster ya existe, lo borra y lo recrea desde ce
 4. **CRDs del Prometheus Operator** (descargadas del chart 55.0.0, aplicadas con server-side apply)
 5. Nginx Ingress
 6. `root-app`, que a su vez sincroniza Prometheus, Grafana y demo-app
+7. Espera a que las 4 Applications queden `Synced` y `Healthy` (hasta 180 s)
+8. Levanta los `port-forward` en segundo plano y abre ArgoCD en el navegador
 
 La parte lenta es el paso 6: los charts tardan en renderizarse y Prometheus en ponerse *ready*.
 ArgoCD sincroniza cada ~3 minutos, así que **`root-app` puede marcar `Synced` antes de que
 `prometheus` termine**. Es normal ver `OutOfSync` durante el primer minuto.
+
+> **El script no se queda esperando a que la terminal quede libre.** Los `port-forward` del
+> paso 8 se lanzan con `nohup`, así que puedes seguir usando la terminal mientras corren.
+
+Si al terminar ves un aviso de que alguna Application no convergió en 180 s, no es un fallo del
+script: significa que el primer despliegue tardó más. Espera un poco y vuelve a consultar:
+
+```bash
+kubectl get applications -n argocd
+```
 
 Para ver el estado cuando quieras:
 
@@ -271,36 +287,24 @@ prometheus   Synced        Healthy
 root-app     Synced        Healthy
 ```
 
+> **Si tocas `bootstrap/argocd-apps.yaml` y no ves cambio en el cluster**, es que `root-app`
+> aún no ha recogido el commit.Fuerza el refresco:
+>
+> ```bash
+> kubectl annotate application root-app -n argocd argocd.argoproj.io/refresh=hard --overwrite
+> ```
+>
+> Tarda unos 20 s en propagarse a las Applications hijas.
+
 ---
 
 ## Cómo acceder
 
-### Vía Ingress (recomendado)
+### Vía port-forward (recomendado)
 
-| Servicio    | Host             | Notas                          |
-| ----------- | ---------------- | ------------------------------ |
-| **Grafana** | `grafana.local`  | usuario `admin`, clave `admin` |
-| **demo-app**| `demo-app.local` | sin autenticación              |
-
-El ingress de nginx escucha en la IP del loadbalancer. Para resolver los nombres en local,
-añade a tu `hosts` de Windows:
-
-```text
-172.19.0.3   grafana.local
-172.19.0.3   demo-app.local
-```
-
-La IP puede cambiar en cada recreación del cluster; consíguela con:
-
-```bash
-kubectl get ingress -n observability grafana -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-```
-
-### Vía port-forward
-
-`bootstrap.sh` ya los lanza **en segundo plano** al final y abre ArgoCD en el navegador,
-así que la terminal queda libre para seguir usándose. Para ver qué puerto acabó
-sirviendo cada aplicación:
+`bootstrap.sh` los lanza **en segundo plano** al final y abre ArgoCD en el navegador, así que
+la terminal queda libre para seguir usándose. Para ver qué puerto acabó sirviendo cada
+aplicación:
 
 ```bash
 cat /tmp/sre-lab-portforwards.map
@@ -324,8 +328,98 @@ Para pararlos todos:
 bash bootstrap/stop-portforwards.sh
 ```
 
+> Si matas los `port-forward` a mano con `pkill -f 'kubectl port-forward'`, el fichero
+> `.pid` se queda obsoleto. La próxima vez que corras `bootstrap.sh` los mata sin error
+> porque `stop` ignora los PIDs que ya no existen.
+
 ArgoCD usa certificado autofirmado, así que el navegador mostrará un aviso de
 seguridad. Es esperado: pulsa **Advanced → Proceed**.
+
+### Vía Ingress
+
+| Servicio    | Host             | Notas                                    |
+| ----------- | ---------------- | ---------------------------------------- |
+| **demo-app**| `demo-app.local` | sin autenticación                        |
+| ~~Grafana~~ | ~~`grafana.local`~~ | **no funciona**, ver la nota de abajo   |
+
+> ⚠️ **Grafana no es accesible por ingress.** Su `root_url` está fijado a
+> `http://localhost:3000` porque el chart por defecto usa `domain = grafana.local`, y con ese
+> valor el navegador recibe `Failed to fetch` al pedir cualquier API. Fijarlo a `localhost`
+> arregla el port-forward, pero rompe el ingress. Usa siempre `http://localhost:3000`.
+>
+> Si algún día quieres que ambos funcionen, la vía es un `root_url` con los placeholders de
+> Grafana (`%(protocol)s://%(domain)s:%(http_port)s/`) **y** quitar el `domain` fijo.
+
+El ingress de nginx escucha en la IP del loadbalancer. Para resolver los nombres en local,
+añade a tu `hosts` de Windows:
+
+```text
+172.19.0.3   demo-app.local
+```
+
+La IP puede cambiar en cada recreación del cluster; consíguela con:
+
+```bash
+kubectl get ingress -n applications demo-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+```
+
+---
+
+## Grafana
+
+Grafana se despliega como aplicación independiente (chart `grafana` 7.0.19), no como subchart
+de `kube-prometheus-stack`. Eso obliga a cablear a mano dos cosas que el stack integrado
+hacía solo.
+
+### Datasource
+
+Provisionado desde Git en los values de la Application de Grafana, así que **sobrevive a cada
+rebuild**:
+
+```yaml
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://prometheus-kube-prometheus-prometheus.observability.svc.cluster.local:9090
+        isDefault: true
+```
+
+Comprobar que responde:
+
+```bash
+curl -s -u admin:admin http://localhost:3000/api/datasources/uid/prometheus/health
+```
+
+Deberías ver `"status":"OK"` y `"Successfully queried the Prometheus API."`.
+
+### Dashboards
+
+**No hay ningún dashboard versionado en el repo.** El que se ha usado (`Node Exporter Full`,
+de `kube-prometheus-stack`) se importó a mano en la UI.
+
+Grafana corre con almacenamiento **efímero** (sin PVC), así que al recrear el cluster **se
+pierde**. Hay que volver a importarlo.
+
+Para sacarlo de la instancia actual:
+
+```bash
+curl -s -u admin:admin http://localhost:3000/api/dashboards/uid/rYdddlPWk \
+  | python3 -c 'import sys,json;print(json.dumps(json.load(sys.stdin)["dashboard"]))' \
+  > node-exporter-full.json
+```
+
+Verifícalo antes de conectarte:
+
+```bash
+curl -s -u admin:admin http://localhost:3000/api/frontend/settings \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["appUrl"])'
+```
+
+Debe devolver `http://localhost:3000/`. Si devuelve `grafana.local`, el `root_url` no se aplicó
+todavía.
 
 ### Credenciales de ArgoCD
 
@@ -472,7 +566,7 @@ Las piezas de detección están operativas; falta el bloque de event-driven auto
 * **EDA**: `ansible-rulebook` y event-driven automation
 * **SRE**: observabilidad, alerting y automatización de operaciones
 
-### Dos trampas que costaron tiempo
+### Cuatro trampas que costaron tiempo
 
 **`syncOptions` cambió de sitio en ArgoCD v3.** En v2.x era `spec.syncOptions`; desde v3 la
 ruta válida es `spec.syncPolicy.syncOptions`. Con el layout antiguo, el API server hace
@@ -489,6 +583,30 @@ kubectl logs -n argocd argocd-application-controller-0 --since=5m | grep 'unknow
 a que la operación se ejecutó, no a que el cluster haya cambiado. La señal fiable es que
 `status.sync.status` llegue a `Synced` y **se quede** ahí.
 
+**`Synced` en la app hija no significa que root-app tenga el commit.** `root-app` va con su
+propio ritmo de polling (~3 min). Si editas `bootstrap/argocd-apps.yaml` y la app de Grafana
+sigue `Synced` con los valores viejos, es simplemente que nadie le ha aplicado el commit
+todavía. Se comprueba comparando revisiones:
+
+```bash
+git rev-parse origin/main | cut -c1-9
+kubectl get application root-app -n argocd -o jsonpath='{.status.sync.revision}' | cut -c1-9
+```
+
+Y se fuerza con `kubectl annotate application root-app -n argocd argocd.argoproj.io/refresh=hard --overwrite`.
+
+**El `root_url` de Grafana decide si la UI funciona o no.** El chart `grafana` viene con
+`domain = grafana.local` por defecto, y eso hace que Grafana se builda la URL base
+`http://grafana.local:3000/`. Si abres la UI por `localhost:3000`, el navegador pide contra
+`grafana.local`, que no resuelve, y cada llamada a la API muere con `Failed to fetch`. El
+síntoma engaña porque **el datasource puede estar perfectamente configurado y el health check
+devolver `OK`**: el fallo es del navegador, no del backend. Se diagnostica mirando qué cree
+Grafana que es su URL base:
+
+```bash
+curl -s -u admin:admin http://localhost:3000/api/frontend/settings | grep -o '"appUrl":"[^"]*"'
+```
+
 ---
 
 ## Próximos pasos
@@ -503,8 +621,8 @@ a que la operación se ejecutó, no a que el cluster haya cambiado. La señal fi
 [x] Node Exporter
 [x] kube-state-metrics
 [x] PrometheusRules propias (HighCPU, HighMemory)
-[ ] Datasource de Prometheus en Grafana
-[ ] Dashboards de Grafana
+[x] Datasource de Prometheus en Grafana
+[ ] Dashboards de Grafana versionados en Git
 [ ] Webhooks
 [ ] EDA
 [ ] Ansible
@@ -521,8 +639,8 @@ a que la operación se ejecutó, no a que el cluster haya cambiado. La señal fi
 
 Este repositorio representa un **laboratorio SRE en evolución**.
 
-La infraestructura base, la monitorización y las primeras alertas propias ya están
-operativas, mientras que el datasource y los dashboards de Grafana, el event-driven
+La infraestructura base, la monitorización, las primeras alertas propias y el datasource de
+Grafana ya están operativas, mientras que los dashboards de Grafana, el event-driven
 automation y la auto-remediación siguen en implementación.
 
 El objetivo final es disponer de una plataforma capaz de:
