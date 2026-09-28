@@ -184,10 +184,25 @@ helm pull prometheus-community/kube-prometheus-stack \
 echo ""
 echo "Aplicando CRDs con Server-Side Apply..."
 
-kubectl apply \
+# No se usa una ruta fija a proposito: segun la version del chart las CRDs pueden
+# estar en <chart>/crds/ o en <chart>/charts/<subchart>/crds/ (en 55.x es
+# charts/crds/crds/, porque "crds" es un subchart). Buscar por nombre sobrevive
+# a esos cambios de layout.
+CRD_FILES=$(find "${PROMETHEUS_CRDS_DIR}" -type f -name 'crd-*.yaml' | sort)
+
+if [ -z "${CRD_FILES}" ]; then
+    echo "ERROR: no se encontro ningun CRD bajo ${PROMETHEUS_CRDS_DIR}"
+    echo "       Layout encontrado:"
+    find "${PROMETHEUS_CRDS_DIR}" -maxdepth 4 -type d | sed 's/^/         /'
+    exit 1
+fi
+
+echo "  CRDs encontradas: $(echo "${CRD_FILES}" | wc -l)"
+
+echo "${CRD_FILES}" | xargs -r kubectl apply \
     --server-side \
     --force-conflicts \
-    -f "${PROMETHEUS_CRDS_DIR}/kube-prometheus-stack/crds"
+    -f
 
 echo ""
 echo "CRDs de Prometheus Operator instalados correctamente."
