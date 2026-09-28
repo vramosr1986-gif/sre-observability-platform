@@ -437,12 +437,131 @@ echo ""
 
 echo "Ejecuta:"
 echo ""
-echo "kubectl port-forward svc/argocd-server -n argocd 9090:443"
+# ============================================================
+# 16. PUERTOS Y NAVEGADOR
+# ============================================================
+
 echo ""
-echo "Después abre:"
+echo "============================================================"
+echo " ACCESO A LAS APLICACIONES"
+echo "============================================================"
 echo ""
-echo "https://localhost:9090"
+
+# Los port-forward se lanzan en segundo plano con nohup para no bloquear esta
+# terminal. Los PIDs quedan en un fichero para poder pararlos despues.
+PORTFORWARD_PIDFILE="/tmp/sre-lab-portforwards.pid"
+PORTFORWARD_LOGDIR="/tmp/sre-lab-portforwards"
+PORT_MAP_FILE="/tmp/sre-lab-portforwards.map"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Si una ejecucion anterior dejo forwards vivos, se limpian.
+if [ -f "${PORTFORWARD_PIDFILE}" ]; then
+    while read -r OLD_PID; do
+        [ -n "${OLD_PID}" ] && kill "${OLD_PID}" 2>/dev/null || true
+    done < "${PORTFORWARD_PIDFILE}"
+    rm -f "${PORTFORWARD_PIDFILE}"
+fi
+
+mkdir -p "${PORTFORWARD_LOGDIR}"
+: > "${PORTFORWARD_PIDFILE}"
+: > "${PORT_MAP_FILE}"
+
+port_is_free() {
+    ! ss -ltn 2>/dev/null | grep -q ":${1} "
+}
+
+# Busca el primer puerto libre a partir del preferido.
+find_free_port() {
+    local PORT="${1}"
+    local ATTEMPT=0
+    while [ "${ATTEMPT}" -lt 20 ]; do
+        if port_is_free "${PORT}"; then
+            echo "${PORT}"
+            return 0
+        fi
+        PORT=$((PORT + 1))
+        ATTEMPT=$((ATTEMPT + 1))
+    done
+    echo "${1}"
+    return 1
+}
+
+# start_forward <nombre> <ns> <svc> <puerto-remoto> <puerto-preferido>
+start_forward() {
+    local NAME="${1}"
+    local NS="${2}"
+    local SVC="${3}"
+    local REMOTE_PORT="${4}"
+    local PREFERRED="${5}"
+
+    if ! kubectl get svc "${SVC}" -n "${NS}" >/dev/null 2>&1; then
+        printf "  %-12s omitido (no existe el service %s)\n" "${NAME}" "${SVC}"
+        return 0
+    fi
+
+    local PORT
+    PORT=$(find_free_port "${PREFERRED}")
+
+    if [ "${PORT}" != "${PREFERRED}" ]; then
+        printf "  %-12s puerto %s ocupado, usando %s\n" "${NAME}" "${PREFERRED}" "${PORT}"
+    fi
+
+    nohup kubectl port-forward "svc/${SVC}" -n "${NS}" "${PORT}:${REMOTE_PORT}" \
+        > "${PORTFORWARD_LOGDIR}/${NAME}.log" 2>&1 &
+
+    local PID=$!
+    echo "${PID}" >> "${PORTFORWARD_PIDFILE}"
+    echo "${NAME} ${PORT}" >> "${PORT_MAP_FILE}"
+
+    sleep 1
+
+    if kill -0 "${PID}" 2>/dev/null; then
+        printf "  %-12s http://localhost:%s\n" "${NAME}" "${PORT}"
+    else
+        printf "  %-12s FALLO (ver %s)\n" "${NAME}" "${PORTFORWARD_LOGDIR}/${NAME}.log"
+        sed -i "/^${PID}$/d" "${PORTFORWARD_PIDFILE}"
+        sed -i "/^${NAME} /d" "${PORT_MAP_FILE}"
+    fi
+}
+
+echo "Levantando port-forwards en segundo plano..."
 echo ""
+
+# 8080 y 8443 los usa k3d para el loadbalancer, por eso se esquivan.
+start_forward "argocd"     "${ARGOCD_NAMESPACE}" "argocd-server"                          443  9091
+start_forward "grafana"    "observability"      "grafana"                                  80  3000
+start_forward "prometheus" "observability"      "prometheus-kube-prometheus-prometheus"  9090  9090
+start_forward "alertmgr"   "observability"      "prometheus-kube-prometheus-alertmanager" 9093 9093
+start_forward "demo-app"   "applications"       "demo-app"                                 80  8082
+
+echo ""
+
+ARGOCD_PORT=$(awk '$1=="argocd" {print $2}' "${PORT_MAP_FILE}" 2>/dev/null || true)
+
+if [ -n "${ARGOCD_PORT}" ]; then
+    echo "Abriendo ArgoCD en el navegador..."
+    # WSL no trae xdg-open ni wslview; explorer.exe abre el navegador de Windows.
+    if command -v explorer.exe >/dev/null 2>&1; then
+        explorer.exe "https://localhost:${ARGOCD_PORT}" >/dev/null 2>&1 || true
+    elif command -v wslview >/dev/null 2>&1; then
+        wslview "https://localhost:${ARGOCD_PORT}" >/dev/null 2>&1 || true
+    else
+        echo "  (no se pudo abrir el navegador; abre la URL a mano)"
+    fi
+    echo ""
+    echo "  ArgoCD usa certificado autofirmado: el navegador mostrara un aviso."
+    echo "  Es esperado. Pulsa Advanced -> Proceed."
+fi
+
 echo "============================================================"
 echo " BOOTSTRAP COMPLETADO"
 echo "============================================================"
+echo ""
+echo "Esta terminal sigue libre: los port-forwards corren en segundo plano."
+echo ""
+echo "  Ver puertos sirviendo:   cat ${PORT_MAP_FILE}"
+echo "  Parar los forwards:     bash ${SCRIPT_DIR}/stop-portforwards.sh"
+echo ""
+echo "Acceso por ingress (k3d ya mapea 8080 y 8443 del loadbalancer):"
+echo ""
+kubectl get ingress -A 2>/dev/null || echo "  (sin ingress)"
