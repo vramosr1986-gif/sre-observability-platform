@@ -10,7 +10,61 @@ spec:
   ignoreDifferences:
     - group: apiextensions.k8s.io
       kind: CustomResourceDefinition
+      name: alertmanagerconfigs.monitoring.coreos.com
+      jsonPointers:
+        - /metadata/annotations
+
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      name: alertmanagers.monitoring.coreos.com
+      jsonPointers:
+        - /metadata/annotations
+
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      name: podmonitors.monitoring.coreos.com
+      jsonPointers:
+        - /metadata/annotations
+
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      name: probes.monitoring.coreos.com
+      jsonPointers:
+        - /metadata/annotations
+
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
       name: prometheusagents.monitoring.coreos.com
+      jsonPointers:
+        - /metadata/annotations
+
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      name: prometheuses.monitoring.coreos.com
+      jsonPointers:
+        - /metadata/annotations
+
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      name: prometheusrules.monitoring.coreos.com
+      jsonPointers:
+        - /metadata/annotations
+
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      name: scrapeconfigs.monitoring.coreos.com
+      jsonPointers:
+        - /metadata/annotations
+
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      name: servicemonitors.monitoring.coreos.com
+      jsonPointers:
+        - /metadata/annotations
+
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      name: thanosrulers.monitoring.coreos.com
       jsonPointers:
         - /metadata/annotations
 
@@ -21,10 +75,8 @@ spec:
 
     helm:
       skipCrds: true
-      values: |
-        crds:
-          enabled: false
 
+      values: |
         grafana:
           enabled: false
 
@@ -33,6 +85,7 @@ spec:
             retention: 7d
 
         additionalPrometheusRulesMap:
+
           high-cpu-alert:
             groups:
               - name: cpu
@@ -45,8 +98,10 @@ spec:
                         ) * 100
                       ) > 80
                     for: 5m
+
                     labels:
                       severity: warning
+
                     annotations:
                       summary: "CPU alta en {{ $labels.instance }}"
                       description: "Uso de CPU superior al 80% durante 5 minutos en {{ $labels.instance }}"
@@ -65,8 +120,10 @@ spec:
                         )
                       ) * 100 > 80
                     for: 5m
+
                     labels:
                       severity: warning
+
                     annotations:
                       summary: "Memoria alta en {{ $labels.instance }}"
                       description: "Uso de memoria superior al 80% durante 5 minutos en {{ $labels.instance }}"
@@ -83,7 +140,6 @@ spec:
   syncOptions:
     - CreateNamespace=true
     - ServerSideApply=true
-
 
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -125,7 +181,6 @@ spec:
 
   syncOptions:
     - CreateNamespace=true
-
 
 ---
 apiVersion: argoproj.io/v1alpha1

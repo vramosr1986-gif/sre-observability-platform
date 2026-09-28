@@ -13,11 +13,39 @@ echo ""
 CLUSTER_NAME="sre-lab"
 ARGOCD_NAMESPACE="argocd"
 INGRESS_NAMESPACE="ingress-nginx"
+PROMETHEUS_CHART_VERSION="55.0.0"
+
+# ============================================================
+# DEPENDENCIAS
+# ============================================================
+
+echo "=== Comprobando dependencias ==="
+echo ""
+
+command -v k3d >/dev/null 2>&1 || {
+    echo "ERROR: k3d no está instalado."
+    exit 1
+}
+
+command -v kubectl >/dev/null 2>&1 || {
+    echo "ERROR: kubectl no está instalado."
+    exit 1
+}
+
+command -v helm >/dev/null 2>&1 || {
+    echo "ERROR: Helm no está instalado."
+    exit 1
+}
+
+echo "k3d:     OK"
+echo "kubectl: OK"
+echo "helm:    OK"
 
 # ============================================================
 # 1. BORRAR CLUSTER ANTERIOR
 # ============================================================
 
+echo ""
 echo "=== 1. Limpiando cluster anterior ==="
 echo ""
 
@@ -118,11 +146,51 @@ echo ""
 echo "ArgoCD está listo."
 
 # ============================================================
-# 8. INSTALAR NGINX INGRESS
+# 8. INSTALAR CRDs DE PROMETHEUS OPERATOR
 # ============================================================
 
 echo ""
-echo "=== 8. Instalando Nginx Ingress ==="
+echo "=== 8. Instalando CRDs de kube-prometheus-stack ${PROMETHEUS_CHART_VERSION} ==="
+echo ""
+
+PROMETHEUS_CRDS_DIR="/tmp/kube-prometheus-stack-${PROMETHEUS_CHART_VERSION}"
+
+rm -rf "${PROMETHEUS_CRDS_DIR}"
+mkdir -p "${PROMETHEUS_CRDS_DIR}"
+
+echo "Añadiendo repositorio prometheus-community..."
+
+helm repo add prometheus-community \
+    https://prometheus-community.github.io/helm-charts \
+    2>/dev/null || true
+
+helm repo update
+
+echo ""
+echo "Descargando kube-prometheus-stack ${PROMETHEUS_CHART_VERSION}..."
+
+helm pull prometheus-community/kube-prometheus-stack \
+    --version "${PROMETHEUS_CHART_VERSION}" \
+    --untar \
+    --untardir "${PROMETHEUS_CRDS_DIR}"
+
+echo ""
+echo "Aplicando CRDs con Server-Side Apply..."
+
+kubectl apply \
+    --server-side \
+    --force-conflicts \
+    -f "${PROMETHEUS_CRDS_DIR}/kube-prometheus-stack/crds"
+
+echo ""
+echo "CRDs de Prometheus Operator instalados correctamente."
+
+# ============================================================
+# 9. INSTALAR NGINX INGRESS
+# ============================================================
+
+echo ""
+echo "=== 9. Instalando Nginx Ingress ==="
 echo ""
 
 kubectl apply \
@@ -132,11 +200,11 @@ echo ""
 echo "Nginx Ingress instalado."
 
 # ============================================================
-# 9. ESPERAR NGINX INGRESS
+# 10. ESPERAR NGINX INGRESS
 # ============================================================
 
 echo ""
-echo "=== 9. Esperando Nginx Ingress ==="
+echo "=== 10. Esperando Nginx Ingress ==="
 echo ""
 
 kubectl wait \
@@ -149,11 +217,11 @@ echo ""
 echo "Nginx Ingress está listo."
 
 # ============================================================
-# 10. APLICAR ROOT APP
+# 11. APLICAR ROOT APP
 # ============================================================
 
 echo ""
-echo "=== 10. Iniciando GitOps ==="
+echo "=== 11. Iniciando GitOps ==="
 echo ""
 
 echo "Aplicando Root Application..."
@@ -165,11 +233,11 @@ echo ""
 echo "Root App creada."
 
 # ============================================================
-# 11. ESPERAR ROOT APP
+# 12. ESPERAR ROOT APP
 # ============================================================
 
 echo ""
-echo "=== 11. Esperando sincronización de Root App ==="
+echo "=== 12. Esperando sincronización de Root App ==="
 echo ""
 
 for i in {1..60}; do
@@ -194,11 +262,11 @@ for i in {1..60}; do
 done
 
 # ============================================================
-# 12. ESPERAR APPLICATIONS HIJAS
+# 13. ESPERAR APPLICATIONS HIJAS
 # ============================================================
 
 echo ""
-echo "=== 12. Esperando Applications hijas ==="
+echo "=== 13. Esperando Applications hijas ==="
 echo ""
 
 sleep 10
@@ -207,12 +275,12 @@ kubectl get applications \
     -n "${ARGOCD_NAMESPACE}"
 
 # ============================================================
-# 13. ESTADO FINAL
+# 14. ESTADO FINAL
 # ============================================================
 
 echo ""
 echo "============================================================"
-echo " BOOTSTRAP COMPLETADO"
+echo " ESTADO DEL CLUSTER"
 echo "============================================================"
 echo ""
 
@@ -225,67 +293,26 @@ kubectl get namespaces
 
 echo ""
 echo "=== ARGOCD PODS ==="
-kubectl get pods \
-    -n "${ARGOCD_NAMESPACE}"
+kubectl get pods -n "${ARGOCD_NAMESPACE}"
 
 echo ""
 echo "=== NGINX INGRESS PODS ==="
-kubectl get pods \
-    -n "${INGRESS_NAMESPACE}"
+kubectl get pods -n "${INGRESS_NAMESPACE}"
 
 echo ""
 echo "=== ARGOCD APPLICATIONS ==="
-kubectl get applications \
-    -n "${ARGOCD_NAMESPACE}"
+kubectl get applications -n "${ARGOCD_NAMESPACE}"
 
-echo ""
-echo "=== Instalando CRDs de Prometheus Operator ==="
-echo ""
-
-kubectl apply --server-side \
-  -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_alertmanagerconfigs.yaml
-
-kubectl apply --server-side \
-  -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_alertmanagers.yaml
-
-kubectl apply --server-side \
-  -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
-
-kubectl apply --server-side \
-  -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_probes.yaml
-
-kubectl apply --server-side \
-  -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheusagents.yaml
-
-kubectl apply --server-side \
-  -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheuses.yaml
-
-kubectl apply --server-side \
-  -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
-
-kubectl apply --server-side \
-  -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_scrapeconfigs.yaml
-
-kubectl apply --server-side \
-  -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
-
-kubectl apply --server-side \
-  -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_thanosrulers.yaml
-  
 echo ""
 echo "=== OBSERVABILITY PODS ==="
-kubectl get pods \
-    -n observability \
-    2>/dev/null || true
+kubectl get pods -n observability 2>/dev/null || true
 
 echo ""
 echo "=== APPLICATIONS PODS ==="
-kubectl get pods \
-    -n applications \
-    2>/dev/null || true
+kubectl get pods -n applications 2>/dev/null || true
 
 # ============================================================
-# 14. CONTRASEÑA ARGOCD
+# 15. CREDENCIALES ARGOCD
 # ============================================================
 
 echo ""
@@ -304,6 +331,10 @@ echo ""
 echo "Contraseña:"
 echo "${ARGOCD_PASSWORD}"
 
+# ============================================================
+# 16. ACCESO A ARGOCD
+# ============================================================
+
 echo ""
 echo "============================================================"
 echo " ACCESO A ARGOCD"
@@ -314,10 +345,10 @@ echo "Ejecuta:"
 echo ""
 echo "kubectl port-forward svc/argocd-server -n argocd 9090:443"
 echo ""
-
 echo "Después abre:"
 echo ""
 echo "https://localhost:9090"
 echo ""
-
+echo "============================================================"
+echo " BOOTSTRAP COMPLETADO"
 echo "============================================================"
