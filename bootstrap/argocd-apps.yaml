@@ -35,7 +35,7 @@ spec:
                           severity: warning
                         annotations:
                           summary: "CPU alta en {{ $labels.instance }}"
-                          description: "Uso de CPU > 80% durante 5 min en {{ $labels.instance }} (actual: {{ $value | printf \"%.2f\" }}%)"
+                          description: "Uso de CPU > 80% durante 5 min en {{ $labels.instance }}"
   destination:
     server: https://kubernetes.default.svc
     namespace: observability
