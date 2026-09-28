@@ -176,10 +176,31 @@ helm repo update
 echo ""
 echo "Descargando kube-prometheus-stack ${PROMETHEUS_CHART_VERSION}..."
 
-helm pull prometheus-community/kube-prometheus-stack \
-    --version "${PROMETHEUS_CHART_VERSION}" \
-    --untar \
-    --untardir "${PROMETHEUS_CRDS_DIR}"
+# GitHub devuelve 500 de forma intermitente al servir los assets de release, asi que
+# se reintenta con backoff en lugar de morir y dejar el cluster a medias.
+PULL_OK=false
+for ATTEMPT in 1 2 3 4 5; do
+
+    if helm pull prometheus-community/kube-prometheus-stack \
+        --version "${PROMETHEUS_CHART_VERSION}" \
+        --untar \
+        --untardir "${PROMETHEUS_CRDS_DIR}"; then
+
+        PULL_OK=true
+        break
+
+    fi
+
+    echo "  Intento ${ATTEMPT}/5 fallido. Reintentando en $((ATTEMPT * 5))s..."
+    rm -rf "${PROMETHEUS_CRDS_DIR:?}"/*
+    sleep $((ATTEMPT * 5))
+
+done
+
+if [ "${PULL_OK}" != "true" ]; then
+    echo "ERROR: no se pudo descargar el chart tras 5 intentos."
+    exit 1
+fi
 
 echo ""
 echo "Aplicando CRDs con Server-Side Apply..."
