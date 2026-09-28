@@ -123,6 +123,15 @@ spec:
         service:
           type: ClusterIP
 
+        # El chart fija domain=grafana.local, asi que Grafana construye su
+        # root_url con ese host y el navegador (en localhost:3000 por
+        # port-forward) recibe "Failed to fetch" al pedir cualquier API.
+        # Se fija root_url al host por el que se accede de verdad.
+        grafana.ini:
+          server:
+            root_url: http://localhost:3000
+            domain: localhost
+
         ingress:
           enabled: true
           ingressClassName: nginx
