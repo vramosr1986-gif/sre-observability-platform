@@ -24,17 +24,9 @@ Todo el proyecto está gestionado como código.
 
 ![ArgoCD Login](docs/screenshots/argocd-login.jpeg)
 
-### Kubernetes — Nodos
-
-![Kubernetes Nodos](docs/screenshots/kubectl-nodes.jpeg)
-
-### Kubernetes — Pods
+### Kubernetes ### Kubernetes — Pods
 
 ![Kubernetes Pods](docs/screenshots/kubectl-pods.jpeg)
-
-### Prometheus — Targets
-
-![Prometheus](docs/screenshots/prometheus-targets.jpeg)
 
 ---
 
