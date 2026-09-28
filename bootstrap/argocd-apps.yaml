@@ -6,9 +6,16 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/vramosr1986-gif/sre-observability-platform.git
-    targetRevision: main
-    path: gitops/apps/prometheus
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 55.0.0
+    helm:
+      values: |
+        grafana:
+          enabled: false
+        prometheus:
+          prometheusSpec:
+            retention: 7d
   destination:
     server: https://kubernetes.default.svc
     namespace: observability
@@ -27,9 +34,19 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/vramosr1986-gif/sre-observability-platform.git
-    targetRevision: main
-    path: gitops/apps/grafana
+    repoURL: https://grafana.github.io/helm-charts
+    chart: grafana
+    targetRevision: 7.0.19
+    helm:
+      values: |
+        adminPassword: admin
+        service:
+          type: ClusterIP
+        ingress:
+          enabled: true
+          ingressClassName: nginx
+          hosts:
+            - grafana.local
   destination:
     server: https://kubernetes.default.svc
     namespace: observability
@@ -37,6 +54,8 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -56,3 +75,5 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
