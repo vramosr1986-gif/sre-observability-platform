@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: 'https://github.com/vramo/sre-observability-platform.git' # <-- Cambia por la URL de tu repositorio
+    repoURL: 'https://github.com/vramosr1986-gif/sre-observability-platform.git' # <-- Cambia por la URL de tu repositorio
     targetRevision: HEAD
     path: gitops/helm/eda
   destination:
