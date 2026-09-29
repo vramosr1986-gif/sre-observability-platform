@@ -44,9 +44,15 @@ command -v helm >/dev/null 2>&1 || {
     exit 1
 }
 
+command -v curl >/dev/null 2>&1 || {
+    echo "ERROR: curl no está instalado."
+    exit 1
+}
+
 echo "k3d:     OK"
 echo "kubectl: OK"
 echo "helm:    OK"
+echo "curl:    OK"
 
 # ============================================================
 # 1. BORRAR CLUSTER ANTERIOR
@@ -405,6 +411,10 @@ echo ""
 echo "=== APPLICATIONS PODS ==="
 kubectl get pods -n applications 2>/dev/null || true
 
+echo ""
+echo "=== EDA PODS ==="
+kubectl get pods -n eda 2>/dev/null || true
+
 # ============================================================
 # 15. CREDENCIALES ARGOCD
 # ============================================================
@@ -426,7 +436,7 @@ echo "Contraseña:"
 echo "${ARGOCD_PASSWORD}"
 
 # ============================================================
-# 17. PUERTOS Y NAVEGADOR
+# 16. PUERTOS Y NAVEGADOR
 # ============================================================
 
 echo ""
@@ -521,6 +531,7 @@ start_forward "grafana"    "observability"      "grafana"                       
 start_forward "prometheus" "observability"      "prometheus-kube-prometheus-prometheus"  9090  9091
 start_forward "alertmgr"   "observability"      "prometheus-kube-prometheus-alertmanager" 9093 9093
 start_forward "demo-app"   "applications"       "demo-app"                                 80  8082
+start_forward "eda"        "eda"                "eda"                                    5000  5000
 
 echo ""
 
@@ -541,6 +552,32 @@ if [ -n "${ARGOCD_PORT}" ]; then
     echo "  Es esperado. Pulsa Advanced -> Proceed."
 fi
 
+# ============================================================
+# 17. COMPROBAR EDA (INFORMATIVO)
+# ============================================================
+
+EDA_PORT=$(awk '$1=="eda" {print $2}' "${PORT_MAP_FILE}" 2>/dev/null || true)
+
+if [ -n "${EDA_PORT}" ]; then
+    echo ""
+    echo "Comprobando webhook EDA en http://localhost:${EDA_PORT} ..."
+
+    # Sin -f ni -s, y con timeout corto. Un fallo aqui no aborta el script.
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+        -X POST "http://localhost:${EDA_PORT}" \
+        -H "Content-Type: application/json" \
+        -d '{"message":"hola"}' \
+        --max-time 5 2>/dev/null || echo "000")
+
+    if [ "${HTTP_CODE}" = "200" ]; then
+        echo "  EDA webhook: OK (HTTP 200)"
+    else
+        echo "  EDA webhook: HTTP ${HTTP_CODE} (normal si el pod aun arranca)"
+        echo "  Revisa con:  kubectl logs -n eda deployment/eda"
+    fi
+fi
+
+echo ""
 echo "============================================================"
 echo " BOOTSTRAP COMPLETADO"
 echo "============================================================"
