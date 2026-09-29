@@ -48,7 +48,7 @@ La infraestructura principal está desplegada y funcionando, incluida la primera
 * [ ] Versionar el dashboard de Grafana en Git
 * [ ] Añadir alertas en Grafana
 * [ ] Configurar webhooks de Alertmanager
-* [ ] Conectar Alertmanager con EDA
+* [ ] Conectar Alertmanager con EDA (fuera del cluster)
 * [ ] Crear `ansible-rulebook`
 * [ ] Crear playbooks de remediación con Ansible
 * [ ] Probar el flujo completo de auto-remediación
@@ -159,7 +159,7 @@ Estado de los pods desplegados en el cluster.
      │  webhook
      ▼
 ┌────────────┐
-│     EDA    │   ← pendiente
+│     EDA    │   ← pendiente (fuera del cluster)
 └─────┬──────┘
       │  ejecuta
       ▼
@@ -361,7 +361,7 @@ El ingress de nginx escucha en la IP del loadbalancer. Para resolver los nombres
 añade a tu `hosts` de Windows:
 
 ```text
-172.19.0.3   demo-app.local
+172.19.0.2   demo-app.local
 ```
 
 La IP puede cambiar en cada recreación del cluster; consíguela con:
