@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eda
+  labels:
+    app: eda
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: eda
+  template:
+    metadata:
+      labels:
+        app: eda
+    spec:
+      serviceAccountName: eda-sa
+      containers:
+        - name: eda-rulebook
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["ansible-rulebook"]
+          args:
+            - "--rulebook"
+            - "/opt/eda/rulebook.yml"
+            - "--verbose"
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: rulebook-volume
+              mountPath: /opt/eda/rulebook.yml
+              subPath: rulebook.yml
+      volumes:
+        - name: rulebook-volume
+          configMap:
+            name: eda-rules

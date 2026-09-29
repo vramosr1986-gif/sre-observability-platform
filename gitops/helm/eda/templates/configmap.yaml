@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eda-rules
+  labels:
+    app: eda
+data:
+  rulebook.yml: |
+{{ .Files.Get "files/rulebook.yml" | indent 4 }}

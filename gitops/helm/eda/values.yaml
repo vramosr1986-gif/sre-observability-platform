@@ -1,0 +1,11 @@
+replicaCount: 1
+
+image:
+  repository: quay.io/ansible/ansible-rulebook
+  tag: "v1.3.2"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 5000
+  targetPort: 5000

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: eda
+description: Chart de Helm para Ansible Event-Driven Automation
+type: application
+version: 0.1.0
+appVersion: "1.3.2"
