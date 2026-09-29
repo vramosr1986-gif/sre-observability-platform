@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eda-rulebook
+data:
+  rulebook.yml: |
+    ---
+    - name: Hola mundo
+      hosts: all
+      sources:
+        - ansible.eda.webhook:
+            host: 0.0.0.0
+            port: 5000
+      rules:
+        - name: Decir algo
+          condition: event.message == "hola"
+          action:
+            debug:
