@@ -16,9 +16,11 @@ spec:
         - name: eda
           image: quay.io/ansible/ansible-rulebook:v1.3.2
           args:
-            - ansible-rulebook
             - --rulebook
             - /rulebook/rulebook.yml
+          ports:
+            - containerPort: 5000
+              name: webhook
           volumeMounts:
             - name: rulebook
               mountPath: /rulebook
