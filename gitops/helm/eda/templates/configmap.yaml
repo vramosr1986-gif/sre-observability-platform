@@ -13,6 +13,6 @@ data:
             port: 5000
       rules:
         - name: Decir algo
-          condition: event.message == "hola soy EDA"
+          condition: event.message == "hola"
           action:
             debug:
