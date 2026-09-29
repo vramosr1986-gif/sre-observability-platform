@@ -1,12 +1,18 @@
----
-- name: Hola mundo              # nivel 0 (lista)
-  hosts: all                    # nivel 1 (2 espacios)
-  sources:                      # nivel 1
-    - ansible.eda.webhook:      # nivel 2 (4 espacios)
-        host: 0.0.0.0           # nivel 3 (8 espacios)
-        port: 5000              # nivel 3
-  rules:                        # nivel 1
-    - name: Decir algo          # nivel 2
-      condition: event.message == "hola"   # nivel 3
-      action:                   # nivel 3
-        debug:                  # nivel 4
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eda-rulebook
+data:
+  rulebook.yml: |
+    ---
+    - name: Hola mundo
+      hosts: all
+      sources:
+        - ansible.eda.webhook:
+            host: 0.0.0.0
+            port: 5000
+      rules:
+        - name: Decir algo
+          condition: event.message == "hola"
+          action:
+            debug:
