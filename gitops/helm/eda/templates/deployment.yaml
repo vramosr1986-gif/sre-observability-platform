@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: eda
-          image: quay.io/ansible/eda-server:main
+          image: quay.io/ansible/ansible-rulebook:v1.3.2
           args:
             - ansible-rulebook
             - --rulebook
