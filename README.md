@@ -18,7 +18,7 @@ Todo el proyecto está gestionado como código y actualmente se encuentra **en d
 
 🟡 **Proyecto en desarrollo**
 
-La infraestructura principal está desplegada y funcionando, incluida la primera tanda de reglas de alerta propias y el datasource de Prometheus en Grafana. Queda pendiente versionar el dashboard en Git, y todo el bloque de event-driven automation y auto-remediación.
+La infraestructura principal está desplegada y funcionando, incluida la primera tanda de reglas de alerta propias y el datasource de Prometheus en Grafana. Queda pendiente todo el bloque de event-driven automation y auto-remediación.
 
 ### Objetivos cumplidos
 
@@ -45,7 +45,6 @@ La infraestructura principal está desplegada y funcionando, incluida la primera
 
 ### Objetivos pendientes
 
-* [ ] Versionar el dashboard de Grafana en Git
 * [ ] Añadir alertas en Grafana
 * [ ] Configurar webhooks de Alertmanager
 * [ ] Conectar Alertmanager con EDA (fuera del cluster)
@@ -59,7 +58,6 @@ La infraestructura principal está desplegada y funcionando, incluida la primera
 * [ ] Documentar el flujo completo de recuperación
 * [ ] Añadir observabilidad de logs
 * [ ] Valorar integración con Elasticsearch
-* [ ] Mejorar dashboards de Grafana
 * [ ] Añadir más métricas de Kubernetes
 * [ ] Añadir métricas de la aplicación `demo-app`
 * [ ] Añadir tests de infraestructura
@@ -626,7 +624,6 @@ curl -s -u admin:admin http://localhost:3000/api/frontend/settings | grep -o '"a
 [x] kube-state-metrics
 [x] PrometheusRules propias (HighCPU, HighMemory)
 [x] Datasource de Prometheus en Grafana
-[ ] Dashboards de Grafana versionados en Git
 [ ] Webhooks
 [ ] EDA
 [ ] Ansible
@@ -644,7 +641,7 @@ curl -s -u admin:admin http://localhost:3000/api/frontend/settings | grep -o '"a
 Este repositorio representa un **laboratorio SRE en evolución**.
 
 La infraestructura base, la monitorización, las primeras alertas propias y el datasource de
-Grafana ya están operativas, mientras que los dashboards de Grafana, el event-driven
+Grafana ya están operativas, mientras que los webhooks de Alertmanager, el event-driven
 automation y la auto-remediación siguen en implementación.
 
 El objetivo final es disponer de una plataforma capaz de:
