@@ -2,10 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: eda
-  labels:
-    app: eda
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: 1
   selector:
     matchLabels:
       app: eda
@@ -14,25 +12,17 @@ spec:
       labels:
         app: eda
     spec:
-      serviceAccountName: eda-sa
       containers:
-        - name: eda-rulebook
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["ansible-rulebook"]
+        - name: eda
+          image: quay.io/ansible/eda-server:latest
           args:
-            - "--rulebook"
-            - "/opt/eda/rulebook.yml"
-            - "--verbose"
-          ports:
-            - name: http
-              containerPort: {{ .Values.service.targetPort }}
-              protocol: TCP
+            - ansible-rulebook
+            - --rulebook
+            - /rulebook/rulebook.yml
           volumeMounts:
-            - name: rulebook-volume
-              mountPath: /opt/eda/rulebook.yml
-              subPath: rulebook.yml
+            - name: rulebook
+              mountPath: /rulebook
       volumes:
-        - name: rulebook-volume
+        - name: rulebook
           configMap:
-            name: eda-rules
+            name: eda-rulebook
