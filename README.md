@@ -274,9 +274,6 @@ ArgoCD sincroniza cada ~3 minutos, así que **`root-app` puede marcar `Synced` a
 Si al terminar ves un aviso de que alguna Application no convergió en 180 s, no es un fallo del
 script: significa que el primer despliegue tardó más. Espera un poco y vuelve a consultar:
 
-```bash
-kubectl get applications -n argocd
-```
 
 Para ver el estado cuando quieras:
 
