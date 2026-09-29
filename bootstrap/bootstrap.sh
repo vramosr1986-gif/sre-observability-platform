@@ -320,7 +320,7 @@ echo ""
 
 # root-app puede quedar Synced antes de que las hijas terminen. Sin esta espera el
 # script miente: declara exito mientras Prometheus sigue OutOfSync o Degraded.
-EXPECTED_APPS="prometheus grafana demo-app root-app"
+EXPECTED_APPS="prometheus grafana demo-app eda-app root-app"
 MAX_WAIT=180
 ELAPSED=0
 
