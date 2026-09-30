@@ -1,12 +1,10 @@
 # SRE Observability Platform
 
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-K3d-326CE5?logo=kubernetes)
-
 ![ArgoCD](https://img.shields.io/badge/GitOps-ArgoCD-EF7B4D?logo=argo)
-
 ![Prometheus](https://img.shields.io/badge/Monitoring-Prometheus-E6522C?logo=prometheus)
-
 ![Grafana](https://img.shields.io/badge/Dashboards-Grafana-F46800?logo=grafana)
+![EDA](https://img.shields.io/badge/Automation-EDA-EB5424?logo=ansible)
 
 Plataforma SRE desplegada en Kubernetes con GitOps, monitorización y auto-remediación.
 
@@ -18,7 +16,10 @@ Todo el proyecto está gestionado como código y actualmente se encuentra **en d
 
 🟡 **Proyecto en desarrollo**
 
-La infraestructura principal está desplegada y funcionando, incluida la primera tanda de reglas de alerta propias y el datasource de Prometheus en Grafana. Queda pendiente todo el bloque de event-driven automation y auto-remediación.
+La infraestructura principal está desplegada y funcionando. La cadena de alertas completa
+(Prometheus → Alertmanager → EDA) ya está operativa: Alertmanager envía cada alerta al receptor
+`alertas-para-eda`, que hace un POST a EDA a través de su webhook. Queda pendiente la parte de
+remediación real: playbooks de Ansible que ejecuten acciones correctivas.
 
 ### Objetivos cumplidos
 
@@ -42,19 +43,21 @@ La infraestructura principal está desplegada y funcionando, incluida la primera
 * [x] Configurar el datasource de Prometheus en Grafana
 * [x] Verificar despliegues mediante ArgoCD
 * [x] Verificar el rebuild completo desde cero
+* [x] Configurar webhook de Alertmanager hacia EDA
+* [x] Desplegar EDA (`ansible-rulebook` 1.3.2) en el cluster
+* [x] Conectar Alertmanager con EDA vía webhook
+* [x] Verificar que las alertas llegan a Alertmanager
+* [x] Verificar que Alertmanager envía los POST a EDA (`Notify success`)
+* [x] Configurar el receptor con nombre descriptivo (`alertas-para-eda`)
+* [x] Activar el modo `debug` en Alertmanager para ver las notificaciones
 
 ### Objetivos pendientes
 
-* [ ] Añadir alertas en Grafana
-* [ ] Configurar webhooks de Alertmanager
-* [ ] Conectar Alertmanager con EDA (fuera del cluster)
-* [ ] Crear `ansible-rulebook`
 * [ ] Crear playbooks de remediación con Ansible
 * [ ] Probar el flujo completo de auto-remediación
 * [ ] Simular una incidencia real en Kubernetes
-* [ ] Verificar que la alerta llega a Alertmanager
-* [ ] Verificar que EDA recibe el evento
 * [ ] Ejecutar automáticamente el playbook de Ansible
+* [ ] Hacer visible la reacción de EDA (cambiar imagen a `eda-server` o acción observable)
 * [ ] Documentar el flujo completo de recuperación
 * [ ] Añadir observabilidad de logs
 * [ ] Valorar integración con Elasticsearch
@@ -154,15 +157,17 @@ Estado de los pods desplegados en el cluster.
      │      │  Exporter │
      │      └───────────┘
      │
-     │  webhook
+     │  webhook (POST)
      ▼
 ┌────────────┐
-│     EDA    │   ← pendiente (fuera del cluster)
+│     EDA    │   ← activo (ns eda)
+│  ansible-  │
+│  rulebook  │
 └─────┬──────┘
-      │  ejecuta
+      │  acción
       ▼
 ┌────────────┐
-│   Ansible  │   ← pendiente
+│  Ansible   │   ← pendiente (playbooks de remediación)
 └────────────┘
 ```
 
@@ -177,7 +182,8 @@ bootstrap/root-app.yaml
         ├─ Application/prometheus   (chart kube-prometheus-stack 55.0.0 → ns observability)
         ├─ Application/grafana      (chart grafana 7.0.19            → ns observability)
         ├─ Application/demo-app     (chart local                     → ns applications)
-        └─ los 3 Namespaces
+        ├─ Application/eda-app      (chart local                     → ns eda)
+        └─ los 4 Namespaces
 ```
 
 Un único sentido de cambio: **Git → cluster**. Si editas algo con `kubectl edit`, Argo lo
@@ -187,18 +193,18 @@ sobrescribe con la versión de Git en cuanto lo detecta (`selfHeal: true`).
 
 ## Stack
 
-| Capa                  | Tecnología                 | Estado      | Para qué                       |
-| --------------------- | -------------------------- | ----------- | ------------------------------ |
-| **Contenedores**      | Docker                     | ✅ activo   | Motor de contenedores          |
-| **Orquestación**      | Kubernetes (K3d)           | ✅ activo   | Cluster local                  |
-| **GitOps**            | ArgoCD 3.5.3               | ✅ activo   | Despliegue desde Git           |
-| **Ingress**           | Nginx Ingress              | ✅ activo   | Exponer servicios              |
-| **Métricas**          | Prometheus + Node Exporter | ✅ activo   | Recoger métricas               |
-| **Estado Kubernetes** | kube-state-metrics         | ✅ activo   | Métricas de objetos Kubernetes |
-| **Dashboards**        | Grafana 10.2.2             | ✅ activo   | Visualización               |
-| **Alertas**           | Alertmanager               | ✅ activo   | Gestionar y enviar alertas     |
-| **Auto-remediación**  | EDA (ansible-rulebook)     | ⬜ pendiente | Decidir qué playbook ejecutar  |
-| **Remediación**       | Ansible                    | ⬜ pendiente | Ejecutar playbooks             |
+| Capa                  | Tecnología                    | Estado       | Para qué                        |
+| --------------------- | ----------------------------- | ------------ | ------------------------------- |
+| **Contenedores**      | Docker                        | ✅ activo    | Motor de contenedores           |
+| **Orquestación**      | Kubernetes (K3d)              | ✅ activo    | Cluster local                   |
+| **GitOps**            | ArgoCD 3.5.3                  | ✅ activo    | Despliegue desde Git            |
+| **Ingress**           | Nginx Ingress                 | ✅ activo    | Exponer servicios               |
+| **Métricas**          | Prometheus + Node Exporter    | ✅ activo    | Recoger métricas                |
+| **Estado Kubernetes** | kube-state-metrics            | ✅ activo    | Métricas de objetos Kubernetes  |
+| **Dashboards**        | Grafana 10.2.2                | ✅ activo    | Visualización                   |
+| **Alertas**           | Alertmanager                  | ✅ activo    | Gestionar y enviar alertas      |
+| **Auto-remediación**  | EDA (ansible-rulebook) 1.3.2  | ✅ activo    | Escucha alertas de Alertmanager |
+| **Remediación**       | Ansible                       | ⬜ pendiente | Ejecutar playbooks              |
 
 ---
 
@@ -210,13 +216,20 @@ sre-observability-platform/
 ├── bootstrap/
 │   ├── bootstrap.sh          # crea el cluster, instala ArgoCD/CRDs/ingress y abre la UI
 │   ├── stop-portforwards.sh  # detiene los port-forward lanzados por el bootstrap
-│   ├── namespaces.yaml       # argocd, observability, applications
-│   ├── argocd-apps.yaml      # las 3 Applications hijas (prometheus, grafana, demo-app)
+│   ├── namespaces.yaml       # argocd, observability, applications, eda
+│   ├── argocd-apps.yaml      # las 4 Applications hijas + values de cada chart
 │   └── root-app.yaml         # Application raíz (App-of-Apps)
 │
 ├── gitops/
 │   └── helm/
-│       └── demo-app/         # chart local de la app de demostración
+│       ├── demo-app/         # chart local de la app de demostración
+│       └── eda/              # chart local de EDA (ansible-rulebook)
+│           ├── Chart.yaml
+│           ├── values.yaml
+│           └── templates/
+│               ├── configmap.yaml   # rulebook con source alertmanager
+│               ├── deployment.yaml  # ansible-rulebook con command explícito
+│               └── service.yaml     # expone el webhook en :5000
 │
 ├── docs/
 │   └── screenshots/
@@ -258,8 +271,8 @@ El script es idempotente: si el cluster ya existe, lo borra y lo recrea desde ce
 3. ArgoCD
 4. **CRDs del Prometheus Operator** (descargadas del chart 55.0.0, aplicadas con server-side apply)
 5. Nginx Ingress
-6. `root-app`, que a su vez sincroniza Prometheus, Grafana y demo-app
-7. Espera a que las 4 Applications queden `Synced` y `Healthy` (hasta 180 s)
+6. `root-app`, que a su vez sincroniza Prometheus, Grafana, demo-app y EDA
+7. Espera a que las 5 Applications queden `Synced` y `Healthy` (hasta 180 s)
 8. Levanta los `port-forward` en segundo plano y abre ArgoCD en el navegador
 
 La parte lenta es el paso 6: los charts tardan en renderizarse y Prometheus en ponerse *ready*.
@@ -272,7 +285,6 @@ ArgoCD sincroniza cada ~3 minutos, así que **`root-app` puede marcar `Synced` a
 Si al terminar ves un aviso de que alguna Application no convergió en 180 s, no es un fallo del
 script: significa que el primer despliegue tardó más. Espera un poco y vuelve a consultar:
 
-
 Para ver el estado cuando quieras:
 
 ```bash
@@ -284,19 +296,26 @@ Lo que debes ver cuando todo ha asentado:
 ```text
 NAME         SYNC STATUS   HEALTH STATUS
 demo-app     Synced        Healthy
+eda-app      Synced        Healthy
 grafana      Synced        Healthy
 prometheus   Synced        Healthy
 root-app     Synced        Healthy
 ```
 
 > **Si tocas `bootstrap/argocd-apps.yaml` y no ves cambio en el cluster**, es que `root-app`
-> aún no ha recogido el commit.Fuerza el refresco:
+> aún no ha recogido el commit. Fuerza el refresco:
 >
 > ```bash
 > kubectl annotate application root-app -n argocd argocd.argoproj.io/refresh=hard --overwrite
 > ```
 >
 > Tarda unos 20 s en propagarse a las Applications hijas.
+>
+> **Ojo:** refrescar la app hija (`prometheus`, `grafana`, etc.) **no sirve** cuando el cambio
+> está en `argocd-apps.yaml`. Las apps hijas leen su propio chart o su propio path en el repo,
+> no ese fichero. Los values de Prometheus, por ejemplo, viven en `argocd-apps.yaml`, y solo
+> `root-app` los lee. Se delata porque el `Revision` de la app hija muestra la **versión del
+> chart** (`55.0.0`), no un hash de commit.
 
 ---
 
@@ -312,13 +331,14 @@ aplicación:
 cat /tmp/sre-lab-portforwards.map
 ```
 
-| Servicio       | Puerto por defecto | URL                    |
-| -------------- | ------------------ | ---------------------- |
-| **ArgoCD**     | 9090               | https://localhost:9090 |
-| **Grafana**    | 3000               | http://localhost:3000  |
-| **Prometheus** | 9091               | http://localhost:9091  |
-| **Alertmanager** | 9093             | http://localhost:9093  |
-| **demo-app**   | 8082               | http://localhost:8082  |
+| Servicio         | Puerto por defecto | URL                             |
+| ---------------- | ------------------ | ------------------------------- |
+| **ArgoCD**       | 9090               | https://localhost:9090          |
+| **Grafana**      | 3000               | http://localhost:3000           |
+| **Prometheus**   | 9091               | http://localhost:9091           |
+| **Alertmanager** | 9093               | http://localhost:9093           |
+| **demo-app**     | 8082               | http://localhost:8082           |
+| **EDA**          | 5000               | http://localhost:5000 (solo POST) |
 
 > Si un puerto ya está ocupado (por ejemplo, porque tienes otro `port-forward` vivo), el
 > script busca el siguiente libre y avisa por pantalla. Consulta siempre el fichero
@@ -334,15 +354,19 @@ bash bootstrap/stop-portforwards.sh
 > `.pid` se queda obsoleto. La próxima vez que corras `bootstrap.sh` los mata sin error
 > porque `stop` ignora los PIDs que ya no existen.
 
+> **Alertmanager tiene dos Services.** El que funciona para port-forward es
+> `alertmanager-operated` (headless). El otro, `prometheus-kube-prometheus-alertmanager`, tiene
+> ClusterIP y también sirve, pero no puedes usar los dos a la vez en el mismo puerto local.
+
 ArgoCD usa certificado autofirmado, así que el navegador mostrará un aviso de
 seguridad. Es esperado: pulsa **Advanced → Proceed**.
 
 ### Vía Ingress
 
-| Servicio    | Host             | Notas                                    |
-| ----------- | ---------------- | ---------------------------------------- |
-| **demo-app**| `demo-app.local` | sin autenticación                        |
-| ~~Grafana~~ | ~~`grafana.local`~~ | **no funciona**, ver la nota de abajo   |
+| Servicio     | Host                | Notas                                 |
+| ------------ | ------------------- | ------------------------------------- |
+| **demo-app** | `demo-app.local`    | sin autenticación                     |
+| ~~Grafana~~  | ~~`grafana.local`~~ | **no funciona**, ver la nota de abajo |
 
 > ⚠️ **Grafana no es accesible por ingress.** Su `root_url` está fijado a
 > `http://localhost:3000` porque el chart por defecto usa `domain = grafana.local`, y con ese
@@ -469,13 +493,15 @@ Los targets con valor `1` en la consulta `up` están siendo monitorizados correc
 
 ## Alertas
 
+### Reglas propias
+
 Ya existen **dos reglas de alerta propias**, definidas en `bootstrap/argocd-apps.yaml` dentro
 de `additionalPrometheusRulesMap` y desplegadas como objetos `PrometheusRule`:
 
-| Alerta       | Namespace | Qué detecta                                       |
-| ------------ | --------- | ------------------------------------------------- |
-| `HighCPU`    | `cpu`     | CPU > 80% sostenida 5 min por instancia           |
-| `HighMemory` | `memory`  | Memoria usada > 80% del total durante 5 min       |
+| Alerta       | Namespace | Qué detecta                                 |
+| ------------ | --------- | ------------------------------------------- |
+| `HighCPU`    | `cpu`     | CPU > 80% sostenida 5 min por instancia     |
+| `HighMemory` | `memory`  | Memoria usada > 80% del total durante 5 min |
 
 ```yaml
 additionalPrometheusRulesMap:
@@ -509,48 +535,136 @@ kubectl exec -n observability "$PROM" -c prometheus -- \
 condición no se cumple. Eso es lo esperado en un cluster sano.
 
 > **Ruido esperado en K3d:** las reglas `KubeControllerManagerDown`, `KubeProxyDown` y
-> `KubeSchedulerDown` del propio chart salen perpetually en `firing`. K3d es un cluster de un
-> solo nodo y no expone esos componentes del control plane, así que **no es un fallo**.
+> `KubeSchedulerDown` del propio chart salen perpetuamente en `firing`. K3d es un cluster de
+> un solo nodo y no expone esos componentes del control plane, así que **no es un fallo**.
 > Las alertas propias (`HighCPU`, `HighMemory`) están correctamente inactivas.
 
-### Flujo previsto
+### Receptor de Alertmanager
+
+Alertmanager está configurado para enviar **todas** las alertas a EDA:
+
+```yaml
+alertmanager:
+  config:
+    route:
+      receiver: alertas-para-eda
+      group_by:
+        - alertname
+      group_wait: 10s
+      group_interval: 30s
+      repeat_interval: 1h
+      routes:
+        - receiver: alertas-para-eda
+          matchers:
+            - alertname =~ ".*"
+    receivers:
+      - name: alertas-para-eda
+        webhook_configs:
+          - url: http://eda.eda.svc.cluster.local:5000
+            send_resolved: true
+  alertmanagerSpec:
+    logLevel: debug
+```
+
+* `receiver: alertas-para-eda` → nombre libre del receptor (antes era `eda-webhook`).
+* `webhook_configs` → el receptor hace un POST HTTP al endpoint de EDA.
+* `send_resolved: true` → también se notifica cuando la alerta se resuelve.
+* `logLevel: debug` → para ver cada notificación en los logs.
+
+Verificar que EDA recibe las alertas, mirando los logs de Alertmanager:
+
+```bash
+kubectl logs -n observability alertmanager-prometheus-kube-prometheus-alertmanager-0 -c alertmanager --tail=30 \
+  | grep -i "notify\|webhook\|error"
+```
+
+Cuando todo funciona, se ven líneas como:
+
+```text
+level=debug component=dispatcher receiver=alertas-para-eda integration=webhook[0] msg="Notify success" attempts=1
+```
+
+Ese `Notify success` significa que el POST ha llegado a EDA con éxito.
+
+### Flujo de alertas
 
 ```text
 Prometheus  ──alerta──▶  Alertmanager  ──webhook──▶  EDA  ──▶  Ansible
-                            (✅ activo)                  (⬜ pendiente)
+                            (✅ activo)   (✅ activo)      (⚠️ pendiente)
 ```
 
 ---
 
-## Auto-remediación
+## Auto-remediación (EDA)
 
-La auto-remediación es una de las partes principales del proyecto, pero todavía está en
-desarrollo. El objetivo es que una incidencia detectada por Prometheus pueda desencadenar
-automáticamente una acción correctiva.
+EDA está desplegado como una Application más de ArgoCD (`eda-app`), con su propio chart en
+`gitops/helm/eda/`. La imagen usada es `quay.io/ansible/ansible-rulebook:v1.3.2`, la CLI de
+`ansible-rulebook`.
+
+### El rulebook
+
+Vive en el `ConfigMap` `eda-rulebook`, y define qué escucha EDA y cómo reacciona:
+
+```yaml
+- name: Reaccionar a alertas
+  hosts: all
+  sources:
+    - ansible.eda.alertmanager:
+        host: 0.0.0.0
+        port: 5000
+  rules:
+    - name: Alerta de prueba
+      condition: event.alert.labels.alertname == "TestAlert"
+      action:
+        debug:
+```
+
+* `source: ansible.eda.alertmanager` → EDA entiende el formato de Alertmanager y desempaqueta
+  cada alerta del array `alerts`, generando un evento por alerta.
+* `condition` → filtra qué alerta dispara la regla. Ahora mismo solo `TestAlert`.
+* `action: debug` → imprime el evento. **No se ve en `kubectl logs`** (ver limitaciones).
+
+### Estado actual de la cadena
 
 ```text
 Métrica anormal
       │
       ▼
-Prometheus evalúa la regla
+Prometheus evalúa la regla                 ✅
       │
       ▼
-PrometheusRule  (✅ ya existe: HighCPU / HighMemory)
+PrometheusRule  (HighCPU / HighMemory)     ✅
       │
       ▼
-Alertmanager   (✅ desplegado)
+Alertmanager   enruta a `alertas-para-eda` ✅
       │
       ▼
-EDA            (⬜ pendiente)   ansible-rulebook decide la acción
+EDA            recibe el POST              ✅
       │
       ▼
-Ansible        (⬜ pendiente)   ejecuta el playbook
+Acción         `debug` (no visible)        ⚠️
+      │
+      ▼
+Ansible        playbooks de remediación    ⬜ pendiente
       │
       ▼
 Incidencia corregida
 ```
 
-Las piezas de detección están operativas; falta el bloque de event-driven automation.
+La mitad de detección y enrutado está completa. Falta la parte de remediación real (playbooks).
+
+### Limitación conocida: logs de EDA
+
+La imagen `quay.io/ansible/ansible-rulebook:v1.3.2` **no escribe a stdout**, así que aunque
+EDA reciba las alertas y dispare las reglas, no se ve nada en `kubectl logs`. Alertmanager sí
+confirma que el POST llega (`Notify success`), pero la reacción de EDA es invisible.
+
+Opciones para tener visibilidad:
+
+1. **Cambiar la imagen a `quay.io/ansible/eda-server:latest`**, que sí imprime logs. Requiere
+   ajustar los `args` del Deployment.
+2. **Cambiar la acción del rulebook** por algo observable: `run_playbook` con un playbook que
+   escriba un fichero o haga un POST a otro servicio.
 
 ---
 
@@ -563,12 +677,11 @@ Las piezas de detección están operativas; falta el bloque de event-driven auto
 * **Helm**: charts, values y templates
 * **Prometheus**: métricas, PromQL, ServiceMonitors y PrometheusRules
 * **Grafana**: dashboards y data sources
-* **Alertmanager**: alertas y webhooks
-* **Ansible**: playbooks de remediación
-* **EDA**: `ansible-rulebook` y event-driven automation
+* **Alertmanager**: alertas, webhooks y receptores
+* **EDA**: `ansible-rulebook`, sources, condiciones y acciones
 * **SRE**: observabilidad, alerting y automatización de operaciones
 
-### Cuatro trampas que costaron tiempo
+### Trampas que costaron tiempo
 
 **`syncOptions` cambió de sitio en ArgoCD v3.** En v2.x era `spec.syncOptions`; desde v3 la
 ruta válida es `spec.syncPolicy.syncOptions`. Con el layout antiguo, el API server hace
@@ -581,21 +694,38 @@ siempre con un bucle de autosync que nunca converge, mientras Argo reporta
 kubectl logs -n argocd argocd-application-controller-0 --since=5m | grep 'unknown field'
 ```
 
+**Un cambio en `bootstrap/argocd-apps.yaml` se aplica refrescando `root-app`, no la app hija.**
+Las apps hijas no leen ese fichero: leen su propio chart o su propio path en el repo. Los
+values de Prometheus (por ejemplo, el receptor de Alertmanager) viven en `argocd-apps.yaml`,
+y solo `root-app` los lee. Se detecta mirando el `Revision` de la app hija: en vez de un hash
+de commit, muestra la **versión del chart** (`55.0.0`).
+
+```bash
+kubectl get application prometheus -n argocd -o jsonpath='{.status.sync.revision}'
+# → 55.0.0   (no es un commit, es la versión del chart)
+
+kubectl get application root-app -n argocd -o jsonpath='{.status.sync.revision}'
+# → 1974588  (esto sí es un commit de Git)
+```
+
+**`helm template` antes de commitear.** Un error de indentación en un `ConfigMap` o en un
+`values:` no se detecta hasta que Argo intenta renderizar el chart, y el mensaje de error
+(Helm ejecutado dentro de Argo) es mucho menos claro. `helm template <chart> <ruta>` valida el
+chart en local en un segundo:
+
+```bash
+helm template eda gitops/helm/eda
+```
+
+**Los logs de `ansible-rulebook` pueden estar mudos.** La imagen
+`quay.io/ansible/ansible-rulebook:v1.3.2` no vuelca a stdout, así que aunque EDA reciba las
+alertas y dispare las reglas, no hay forma de verlo desde `kubectl logs`. Se comprueba
+indirectamente mirando los logs de Alertmanager: si aparece `msg="Notify success"`, el POST
+llegó a EDA.
+
 **Un bucle de reconciliación puede *parecer* sano.** El mensaje de éxito del sync se refiere
 a que la operación se ejecutó, no a que el cluster haya cambiado. La señal fiable es que
 `status.sync.status` llegue a `Synced` y **se quede** ahí.
-
-**`Synced` en la app hija no significa que root-app tenga el commit.** `root-app` va con su
-propio ritmo de polling (~3 min). Si editas `bootstrap/argocd-apps.yaml` y la app de Grafana
-sigue `Synced` con los valores viejos, es simplemente que nadie le ha aplicado el commit
-todavía. Se comprueba comparando revisiones:
-
-```bash
-git rev-parse origin/main | cut -c1-9
-kubectl get application root-app -n argocd -o jsonpath='{.status.sync.revision}' | cut -c1-9
-```
-
-Y se fuerza con `kubectl annotate application root-app -n argocd argocd.argoproj.io/refresh=hard --overwrite`.
 
 **El `root_url` de Grafana decide si la UI funciona o no.** El chart `grafana` viene con
 `domain = grafana.local` por defecto, y eso hace que Grafana se builda la URL base
@@ -624,9 +754,10 @@ curl -s -u admin:admin http://localhost:3000/api/frontend/settings | grep -o '"a
 [x] kube-state-metrics
 [x] PrometheusRules propias (HighCPU, HighMemory)
 [x] Datasource de Prometheus en Grafana
-[ ] Webhooks
-[ ] EDA
-[ ] Ansible
+[x] Webhooks (Alertmanager → EDA)
+[x] Despliegue de EDA
+[ ] Hacer visible la reacción de EDA
+[ ] Playbooks de Ansible
 [ ] Auto-remediación
 [ ] Pruebas de incidentes
 [ ] Logs
@@ -636,13 +767,13 @@ curl -s -u admin:admin http://localhost:3000/api/frontend/settings | grep -o '"a
 
 ---
 
-## Proyecto en desarrollo
+# Proyecto en desarrollo
 
 Este repositorio representa un **laboratorio SRE en evolución**.
 
-La infraestructura base, la monitorización, las primeras alertas propias y el datasource de
-Grafana ya están operativas, mientras que los webhooks de Alertmanager, el event-driven
-automation y la auto-remediación siguen en implementación.
+La infraestructura base, la monitorización, las primeras alertas propias, el datasource de
+Grafana y la integración Alertmanager → EDA ya están operativas, mientras que los playbooks
+de remediación y la auto-remediación completa siguen en implementación.
 
 El objetivo final es disponer de una plataforma capaz de:
 
