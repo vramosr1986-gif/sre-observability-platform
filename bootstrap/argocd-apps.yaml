@@ -73,18 +73,18 @@ spec:
         alertmanager:
           config:
             route:
-              receiver: eda-webhook
+              receiver: alertas-para-eda
               group_by:
                 - alertname
               group_wait: 10s
               group_interval: 30s
               repeat_interval: 1h
               routes:
-                - receiver: eda-webhook
+                - receiver: alertas-para-eda
                   matchers:
                     - alertname =~ ".*"
             receivers:
-              - name: eda-webhook
+              - name: alertas-para-eda
                 webhook_configs:
                   - url: http://eda.eda.svc.cluster.local:5000
                     send_resolved: true
