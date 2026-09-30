@@ -13,6 +13,6 @@ data:
             port: 5000
       rules:
         - name: Decir algo
-          condition: event.alert.labels.alertname == "Test"
+          condition: event.alert.labels.alertname == "TestAlert"
           action:
             debug:
