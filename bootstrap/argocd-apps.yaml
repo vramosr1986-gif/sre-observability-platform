@@ -88,6 +88,8 @@ spec:
                 webhook_configs:
                   - url: http://eda.eda.svc.cluster.local:5000
                     send_resolved: true
+          alertmanagerSpec:
+            logLevel: debug
   destination:
     server: https://kubernetes.default.svc
     namespace: observability
