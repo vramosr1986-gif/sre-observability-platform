@@ -70,7 +70,24 @@ spec:
                     annotations:
                       summary: "Memoria alta en {{ $labels.instance }}"
                       description: "Uso de memoria superior al 80% durante 5 minutos en {{ $labels.instance }}"
-
+        alertmanager:
+          config:
+            route:
+              receiver: eda-webhook
+              group_by:
+                - alertname
+              group_wait: 10s
+              group_interval: 30s
+              repeat_interval: 1h
+              routes:
+                - receiver: eda-webhook
+                  matchers:
+                    - alertname =~ ".*"
+            receivers:
+              - name: eda-webhook
+                webhook_configs:
+                  - url: http://eda.eda.svc.cluster.local:5000
+                    send_resolved: true
   destination:
     server: https://kubernetes.default.svc
     namespace: observability
