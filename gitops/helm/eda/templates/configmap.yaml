@@ -8,11 +8,11 @@ data:
     - name: Hola mundo
       hosts: all
       sources:
-        - ansible.eda.webhook:
+        - ansible.eda.alertmanager:
             host: 0.0.0.0
             port: 5000
       rules:
         - name: Decir algo
-          condition: event.message == "hola"
+          condition: event.alert.labels.alertname == "Test
           action:
             debug:
