@@ -1,0 +1,15 @@
+---
+- name: Notificar alerta
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Hacer POST a webhook.site
+      ansible.builtin.uri:
+        url: https://webhook.site/4325c6a4-6efa-4af8-84fc-592905101139
+        method: POST
+        body_format: json
+        body:
+          alerta: "{{ event.alert.labels.alertname | default('desconocida') }}"
+          severidad: "{{ event.alert.labels.severity | default('unknown') }}"
+          mensaje: "Alerta recibida por EDA"
+        status_code: 200

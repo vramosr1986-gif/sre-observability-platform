@@ -5,14 +5,17 @@ metadata:
 data:
   rulebook.yml: |
     ---
-    - name: Hola mundo
+    - name: Reaccionar a alertas
       hosts: all
       sources:
         - ansible.eda.alertmanager:
             host: 0.0.0.0
             port: 5000
       rules:
-        - name: Decir algo
+        - name: Alerta de prueba
           condition: event.alert.labels.alertname == "TestAlert"
           action:
-            debug:
+            run_playbook:
+              name: /rulebook/notify.yml
+  notify.yml: |
+{{ .Files.Get "files/notify.yml" | indent 4 }}
