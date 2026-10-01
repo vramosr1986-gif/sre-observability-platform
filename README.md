@@ -16,10 +16,9 @@ Todo el proyecto está gestionado como código y actualmente se encuentra **en d
 
 🟡 **Proyecto en desarrollo**
 
-La infraestructura principal está desplegada y funcionando. La cadena de alertas completa
-(Prometheus → Alertmanager → EDA) ya está operativa: Alertmanager envía cada alerta al receptor
-`alertas-para-eda`, que hace un POST a EDA a través de su webhook. Queda pendiente la parte de
-remediación real: playbooks de Ansible que ejecuten acciones correctivas.
+La infraestructura principal está desplegada y funcionando. **La cadena completa de event-driven automation está operativa**: Prometheus detecta, Alertmanager enruta al receptor `alertas-para-eda`, EDA recibe la alerta, ejecuta un playbook de Ansible con `run_playbook`, y el playbook hace un POST HTTP a un webhook externo con los datos de la alerta.
+
+Lo único que queda pendiente es la parte de remediación **real** (que el playbook haga algo útil sobre el cluster: escalar un deployment, reiniciar un pod, etc.).
 
 ### Objetivos cumplidos
 
@@ -50,15 +49,19 @@ remediación real: playbooks de Ansible que ejecuten acciones correctivas.
 * [x] Verificar que Alertmanager envía los POST a EDA (`Notify success`)
 * [x] Configurar el receptor con nombre descriptivo (`alertas-para-eda`)
 * [x] Activar el modo `debug` en Alertmanager para ver las notificaciones
+* [x] Configurar el receptor para apuntar a `/alerts` en EDA
+* [x] Desplegar el inventario de Ansible en el ConfigMap de EDA
+* [x] Crear un playbook de Ansible que ejecuta EDA al recibir la alerta
+* [x] Verificar que EDA ejecuta el playbook (`ansible-httpget` en el POST)
+* [x] Verificar el flujo completo end-to-end (Prometheus → webhook.site)
+* [x] Crear script de demo `demo-eda.sh`
 
 ### Objetivos pendientes
 
-* [ ] Crear playbooks de remediación con Ansible
-* [ ] Probar el flujo completo de auto-remediación
-* [ ] Simular una incidencia real en Kubernetes
-* [ ] Ejecutar automáticamente el playbook de Ansible
-* [ ] Hacer visible la reacción de EDA (cambiar imagen a `eda-server` o acción observable)
-* [ ] Documentar el flujo completo de recuperación
+* [ ] Remediar de verdad (escalar un deployment, reiniciar un pod...)
+* [ ] Cambiar la acción del rulebook a `run_playbook` sobre objetos de Kubernetes
+* [ ] Simular una incidencia real (estrés de CPU con `stress-ng`)
+* [ ] Hacer visible la reacción de EDA (cambiar imagen a `eda-server` o añadir logs)
 * [ ] Añadir observabilidad de logs
 * [ ] Valorar integración con Elasticsearch
 * [ ] Añadir más métricas de Kubernetes
@@ -86,7 +89,9 @@ Pantalla de acceso a ArgoCD.
 
 ### ArgoCD — Aplicaciones desplegadas
 
-Aplicaciones gestionadas mediante GitOps y sincronizadas desde Git.
+Las cinco Applications gestionadas por GitOps, todas en estado `Synced` y `Healthy`.
+`root-app` lee la carpeta `bootstrap/` y crea las cuatro hijas: `prometheus`, `grafana`,
+`demo-app` y `eda-app`.
 
 ![ArgoCD Applications](docs/screenshots/argocd-applications.jpeg)
 
@@ -114,6 +119,21 @@ Alertas gestionadas por Alertmanager, con los grupos y firing rules del clúster
 Estado de los pods desplegados en el cluster.
 
 ![Kubernetes ](docs/screenshots/kubernetes.jpeg)
+
+### Flujo completo de auto-remediación
+
+Ejecución del script `demo-eda.sh`, que inyecta una alerta y muestra el recorrido completo
+por toda la cadena: Prometheus → Alertmanager → EDA → Ansible → Webhook.
+
+![Flujo completo](docs/screenshots/flujo-prometheus-EDA-webhook-terminal.png)
+
+### Resultado final — POST recibido en webhook.site
+
+El playbook de Ansible hace un POST HTTP al webhook con los datos de la alerta. El
+`user-agent: ansible-httpget` confirma que el POST lo ha enviado EDA (no un navegador ni
+un `curl` manual).
+
+![Webhook POST](docs/screenshots/webhook-site.png)
 
 ---
 
@@ -157,17 +177,24 @@ Estado de los pods desplegados en el cluster.
      │      │  Exporter │
      │      └───────────┘
      │
-     │  webhook (POST)
+     │  webhook POST a /alerts
      ▼
 ┌────────────┐
 │     EDA    │   ← activo (ns eda)
 │  ansible-  │
 │  rulebook  │
 └─────┬──────┘
-      │  acción
+      │  run_playbook
       ▼
 ┌────────────┐
-│  Ansible   │   ← pendiente (playbooks de remediación)
+│  Ansible   │   ← activo
+│  notify.yml│
+└─────┬──────┘
+      │  POST
+      ▼
+┌────────────┐
+│  Webhook   │   ← activo (webhook.site)
+│  externo   │
 └────────────┘
 ```
 
@@ -204,7 +231,7 @@ sobrescribe con la versión de Git en cuanto lo detecta (`selfHeal: true`).
 | **Dashboards**        | Grafana 10.2.2                | ✅ activo    | Visualización                   |
 | **Alertas**           | Alertmanager                  | ✅ activo    | Gestionar y enviar alertas      |
 | **Auto-remediación**  | EDA (ansible-rulebook) 1.3.2  | ✅ activo    | Escucha alertas de Alertmanager |
-| **Remediación**       | Ansible                       | ⬜ pendiente | Ejecutar playbooks              |
+| **Remediación**       | Ansible                       | ✅ activo    | Ejecutar playbooks              |
 
 ---
 
@@ -226,9 +253,12 @@ sre-observability-platform/
 │       └── eda/              # chart local de EDA (ansible-rulebook)
 │           ├── Chart.yaml
 │           ├── values.yaml
+│           ├── files/
+│           │   ├── notify.yml       # playbook de Ansible (POST a webhook.site)
+│           │   └── inventory.yml    # inventario de Ansible (localhost)
 │           └── templates/
-│               ├── configmap.yaml   # rulebook con source alertmanager
-│               ├── deployment.yaml  # ansible-rulebook con command explícito
+│               ├── configmap.yaml   # rulebook + notify.yml + inventory.yml
+│               ├── deployment.yaml  # ansible-rulebook con --rulebook y --inventory
 │               └── service.yaml     # expone el webhook en :5000
 │
 ├── docs/
@@ -236,11 +266,14 @@ sre-observability-platform/
 │       ├── alertmanager.jpeg
 │       ├── argocd-applications.jpeg
 │       ├── argocd-login.jpeg
+│       ├── flujo-prometheus-EDA-webhook-terminal.png
 │       ├── grafana-dashboard.jpeg
 │       ├── kubernetes.jpeg
-│       └── prometeus-cpu-usage.jpeg
+│       ├── prometeus-cpu-usage.jpeg
+│       └── webhook-site.png
 │
-├── k3d-config.yaml           # 1 server + 2 agents, traefik deshabilitado
+├── demo-eda.sh                # script de demo del flujo completo
+├── k3d-config.yaml            # 1 server + 2 agents, traefik deshabilitado
 └── README.md
 ```
 
@@ -338,7 +371,7 @@ cat /tmp/sre-lab-portforwards.map
 | **Prometheus**   | 9091               | http://localhost:9091           |
 | **Alertmanager** | 9093               | http://localhost:9093           |
 | **demo-app**     | 8082               | http://localhost:8082           |
-| **EDA**          | 5000               | http://localhost:5000 (solo POST) |
+| **EDA**          | 5000               | http://localhost:5000/alerts (solo POST) |
 
 > Si un puerto ya está ocupado (por ejemplo, porque tienes otro `port-forward` vivo), el
 > script busca el siguiente libre y avisa por pantalla. Consulta siempre el fichero
@@ -541,7 +574,8 @@ condición no se cumple. Eso es lo esperado en un cluster sano.
 
 ### Receptor de Alertmanager
 
-Alertmanager está configurado para enviar **todas** las alertas a EDA:
+Alertmanager está configurado para enviar **todas** las alertas a EDA, y **concretamente al
+endpoint `/alerts`** (no a la raíz):
 
 ```yaml
 alertmanager:
@@ -560,7 +594,7 @@ alertmanager:
     receivers:
       - name: alertas-para-eda
         webhook_configs:
-          - url: http://eda.eda.svc.cluster.local:5000
+          - url: http://eda.eda.svc.cluster.local:5000/alerts
             send_resolved: true
   alertmanagerSpec:
     logLevel: debug
@@ -568,6 +602,8 @@ alertmanager:
 
 * `receiver: alertas-para-eda` → nombre libre del receptor (antes era `eda-webhook`).
 * `webhook_configs` → el receptor hace un POST HTTP al endpoint de EDA.
+* **`url: .../alerts`** → EDA solo acepta POSTs en `/alerts`. Si apuntas a `/`, responde
+  `405 Method Not Allowed`.
 * `send_resolved: true` → también se notifica cuando la alerta se resuelve.
 * `logLevel: debug` → para ver cada notificación en los logs.
 
@@ -589,8 +625,8 @@ Ese `Notify success` significa que el POST ha llegado a EDA con éxito.
 ### Flujo de alertas
 
 ```text
-Prometheus  ──alerta──▶  Alertmanager  ──webhook──▶  EDA  ──▶  Ansible
-                            (✅ activo)   (✅ activo)      (⚠️ pendiente)
+Prometheus  ──alerta──▶  Alertmanager  ──webhook /alerts──▶  EDA  ──▶  Ansible
+                              (✅ activo)       (✅ activo)         (✅ activo)
 ```
 
 ---
@@ -601,11 +637,32 @@ EDA está desplegado como una Application más de ArgoCD (`eda-app`), con su pro
 `gitops/helm/eda/`. La imagen usada es `quay.io/ansible/ansible-rulebook:v1.3.2`, la CLI de
 `ansible-rulebook`.
 
+### Arquitectura de ficheros
+
+El chart de EDA tiene **tres ficheros clave** que se montan como ConfigMap y que
+`ansible-rulebook` lee al arrancar:
+
+| Fichero | Fuente en el repo | Qué contiene |
+| ------- | ----------------- | ------------ |
+| `rulebook.yml` | Inline en `configmap.yaml` | Qué escucha EDA y cómo reacciona |
+| `notify.yml` | `files/notify.yml` | El playbook de Ansible que se ejecuta |
+| `inventory.yml` | `files/inventory.yml` | Los hosts sobre los que ejecutar Ansible |
+
+Los tres llegan al pod como ficheros en `/rulebook/`:
+
+```
+/rulebook/
+├── rulebook.yml
+├── notify.yml
+└── inventory.yml
+```
+
 ### El rulebook
 
 Vive en el `ConfigMap` `eda-rulebook`, y define qué escucha EDA y cómo reacciona:
 
 ```yaml
+---
 - name: Reaccionar a alertas
   hosts: all
   sources:
@@ -614,15 +671,58 @@ Vive en el `ConfigMap` `eda-rulebook`, y define qué escucha EDA y cómo reaccio
         port: 5000
   rules:
     - name: Alerta de prueba
-      condition: event.alert.labels.alertname == "TestAlert"
+      condition: event.alert.labels.alertname is defined
       action:
-        debug:
+        run_playbook:
+          name: /rulebook/notify.yml
 ```
 
 * `source: ansible.eda.alertmanager` → EDA entiende el formato de Alertmanager y desempaqueta
   cada alerta del array `alerts`, generando un evento por alerta.
-* `condition` → filtra qué alerta dispara la regla. Ahora mismo solo `TestAlert`.
-* `action: debug` → imprime el evento. **No se ve en `kubectl logs`** (ver limitaciones).
+* `condition` → filtra qué alerta dispara la regla. Ahora mismo matchea **cualquier** alerta
+  con `alertname` definido.
+* `action: run_playbook` → ejecuta el playbook de Ansible `/rulebook/notify.yml`.
+
+### El playbook (`notify.yml`)
+
+```yaml
+---
+- name: Notificar alerta
+  hosts: localhost
+  gather_facts: true
+  tasks:
+    - name: Hacer POST a webhook.site
+      ansible.builtin.uri:
+        url: https://webhook.site/4325c6a4-6efa-4af8-84fc-592905101139
+        method: POST
+        body_format: json
+        body:
+          alerta: "🚨 Alerta recibida por EDA"
+          severidad: "critical"
+          origen: "Prometheus"
+          accion: "Notificación enviada"
+          timestamp: "{{ ansible_date_time.iso8601 | default('N/A') }}"
+          mensaje: "Alerta recibida por EDA"
+        status_code: 200
+```
+
+Hace un POST a `webhook.site` con un JSON profesional que incluye el timestamp real.
+
+### El inventario (`inventory.yml`)
+
+```yaml
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+```
+
+**Obligatorio** para `run_playbook`: Ansible siempre necesita saber sobre qué hosts ejecutar.
+Sin él, EDA falla al arrancar con:
+
+```
+ERROR - Terminating: Rule Alerta de prueba has an action run_playbook which needs inventory to be defined
+```
 
 ### Estado actual de la cadena
 
@@ -637,34 +737,40 @@ PrometheusRule  (HighCPU / HighMemory)     ✅
       │
       ▼
 Alertmanager   enruta a `alertas-para-eda` ✅
-      │
+      │  POST a /alerts
       ▼
 EDA            recibe el POST              ✅
-      │
+      │  run_playbook
       ▼
-Acción         `debug` (no visible)        ⚠️
-      │
+Ansible        ejecuta notify.yml          ✅
+      │  POST HTTP
       ▼
-Ansible        playbooks de remediación    ⬜ pendiente
-      │
-      ▼
-Incidencia corregida
+Webhook externo (webhook.site)             ✅
 ```
 
-La mitad de detección y enrutado está completa. Falta la parte de remediación real (playbooks).
+**La cadena completa funciona de punta a punta.**
 
 ### Limitación conocida: logs de EDA
 
 La imagen `quay.io/ansible/ansible-rulebook:v1.3.2` **no escribe a stdout**, así que aunque
-EDA reciba las alertas y dispare las reglas, no se ve nada en `kubectl logs`. Alertmanager sí
-confirma que el POST llega (`Notify success`), pero la reacción de EDA es invisible.
+EDA reciba las alertas y ejecute el playbook, no se ve nada en `kubectl logs`. Alertmanager sí
+confirma que el POST llega (`Notify success`), y el webhook externo confirma que el playbook
+se ejecutó (`user-agent: ansible-httpget`).
 
-Opciones para tener visibilidad:
+Opciones para tener visibilidad directa:
 
-1. **Cambiar la imagen a `quay.io/ansible/eda-server:latest`**, que sí imprime logs. Requiere
-   ajustar los `args` del Deployment.
-2. **Cambiar la acción del rulebook** por algo observable: `run_playbook` con un playbook que
-   escriba un fichero o haga un POST a otro servicio.
+1. **Cambiar la imagen a `quay.io/ansible/eda-server:latest`**, que sí imprime logs.
+2. **Cambiar la acción del rulebook** por algo aún más visible (escribir un fichero, mandar
+   un Slack, etc.).
+
+### Script de demo
+
+El repo incluye `demo-eda.sh`, un script que inyecta una alerta y muestra el recorrido completo
+por toda la cadena con salida formateada:
+
+```bash
+./demo-eda.sh
+```
 
 ---
 
@@ -674,129 +780,10 @@ Opciones para tener visibilidad:
 * **K3d**: Kubernetes dentro de Docker
 * **GitOps con ArgoCD**: sincronización desde Git, `selfHeal` y `prune`
 * **App-of-Apps**: una Application raíz que gestiona otras Applications
-* **Helm**: charts, values y templates
+* **Helm**: charts, values, templates y `.Files.Get` para ficheros externos
 * **Prometheus**: métricas, PromQL, ServiceMonitors y PrometheusRules
 * **Grafana**: dashboards y data sources
-* **Alertmanager**: alertas, webhooks y receptores
-* **EDA**: `ansible-rulebook`, sources, condiciones y acciones
-* **SRE**: observabilidad, alerting y automatización de operaciones
-
-### Trampas que costaron tiempo
-
-**`syncOptions` cambió de sitio en ArgoCD v3.** En v2.x era `spec.syncOptions`; desde v3 la
-ruta válida es `spec.syncPolicy.syncOptions`. Con el layout antiguo, el API server hace
-*structural schema pruning* y **descarta el campo en silencio**, así que Git siempre declara
-algo que el cluster no tiene. El síntoma es un `root-app` que se queda `OutOfSync` para
-siempre con un bucle de autosync que nunca converge, mientras Argo reporta
-`successfully synced`. La pista está en el log del controller:
-
-```bash
-kubectl logs -n argocd argocd-application-controller-0 --since=5m | grep 'unknown field'
-```
-
-**Un cambio en `bootstrap/argocd-apps.yaml` se aplica refrescando `root-app`, no la app hija.**
-Las apps hijas no leen ese fichero: leen su propio chart o su propio path en el repo. Los
-values de Prometheus (por ejemplo, el receptor de Alertmanager) viven en `argocd-apps.yaml`,
-y solo `root-app` los lee. Se detecta mirando el `Revision` de la app hija: en vez de un hash
-de commit, muestra la **versión del chart** (`55.0.0`).
-
-```bash
-kubectl get application prometheus -n argocd -o jsonpath='{.status.sync.revision}'
-# → 55.0.0   (no es un commit, es la versión del chart)
-
-kubectl get application root-app -n argocd -o jsonpath='{.status.sync.revision}'
-# → 1974588  (esto sí es un commit de Git)
-```
-
-**`helm template` antes de commitear.** Un error de indentación en un `ConfigMap` o en un
-`values:` no se detecta hasta que Argo intenta renderizar el chart, y el mensaje de error
-(Helm ejecutado dentro de Argo) es mucho menos claro. `helm template <chart> <ruta>` valida el
-chart en local en un segundo:
-
-```bash
-helm template eda gitops/helm/eda
-```
-
-**Los logs de `ansible-rulebook` pueden estar mudos.** La imagen
-`quay.io/ansible/ansible-rulebook:v1.3.2` no vuelca a stdout, así que aunque EDA reciba las
-alertas y dispare las reglas, no hay forma de verlo desde `kubectl logs`. Se comprueba
-indirectamente mirando los logs de Alertmanager: si aparece `msg="Notify success"`, el POST
-llegó a EDA.
-
-**Un bucle de reconciliación puede *parecer* sano.** El mensaje de éxito del sync se refiere
-a que la operación se ejecutó, no a que el cluster haya cambiado. La señal fiable es que
-`status.sync.status` llegue a `Synced` y **se quede** ahí.
-
-**El `root_url` de Grafana decide si la UI funciona o no.** El chart `grafana` viene con
-`domain = grafana.local` por defecto, y eso hace que Grafana se builda la URL base
-`http://grafana.local:3000/`. Si abres la UI por `localhost:3000`, el navegador pide contra
-`grafana.local`, que no resuelve, y cada llamada a la API muere con `Failed to fetch`. El
-síntoma engaña porque **el datasource puede estar perfectamente configurado y el health check
-devolver `OK`**: el fallo es del navegador, no del backend. Se diagnostica mirando qué cree
-Grafana que es su URL base:
-
-```bash
-curl -s -u admin:admin http://localhost:3000/api/frontend/settings | grep -o '"appUrl":"[^"]*"'
-```
-
----
-
-## Próximos pasos
-
-```text
-[x] Kubernetes / K3d
-[x] GitOps / ArgoCD
-[x] Helm
-[x] Prometheus
-[x] Grafana
-[x] Alertmanager
-[x] Node Exporter
-[x] kube-state-metrics
-[x] PrometheusRules propias (HighCPU, HighMemory)
-[x] Datasource de Prometheus en Grafana
-[x] Webhooks (Alertmanager → EDA)
-[x] Despliegue de EDA
-[ ] Hacer visible la reacción de EDA
-[ ] Playbooks de Ansible
-[ ] Auto-remediación
-[ ] Pruebas de incidentes
-[ ] Logs
-[ ] Mejoras de observabilidad
-[ ] Cloud
-```
-
----
-
-# Proyecto en desarrollo
-
-Este repositorio representa un **laboratorio SRE en evolución**.
-
-La infraestructura base, la monitorización, las primeras alertas propias, el datasource de
-Grafana y la integración Alertmanager → EDA ya están operativas, mientras que los playbooks
-de remediación y la auto-remediación completa siguen en implementación.
-
-El objetivo final es disponer de una plataforma capaz de:
-
-```text
-Detectar
-   ↓
-Alertar
-   ↓
-Analizar
-   ↓
-Activar
-   ↓
-Remediar
-   ↓
-Verificar
-```
-
-manteniendo toda la infraestructura y configuración gestionadas como código.
-
----
-
-## Autor
-
-**Victor Ramos** — [@vramosr1986-gif](https://github.com/vramosr1986-gif)
-
-Proyecto de aprendizaje y experimentación con **SRE, Kubernetes, GitOps, observabilidad y automatización**.
+* **Alertmanager**: alertas, webhooks, receptores y modo debug
+* **EDA**: `ansible-rulebook`, sources, condiciones, acciones y inventario
+* **Ansible**: playbooks, inventario y módulo `ansible.builtin.uri`
+* **SRE**: observabilidad, alert
