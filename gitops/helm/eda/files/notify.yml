@@ -9,7 +9,6 @@
         method: POST
         body_format: json
         body:
-          alerta: "{{ event.alert.labels.alertname | default('desconocida') }}"
-          severidad: "{{ event.alert.labels.severity | default('unknown') }}"
+          alerta: "Prueba simple"
           mensaje: "Alerta recibida por EDA"
         status_code: 200

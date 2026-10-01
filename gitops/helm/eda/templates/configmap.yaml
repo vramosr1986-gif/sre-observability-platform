@@ -13,7 +13,7 @@ data:
             port: 5000
       rules:
         - name: Alerta de prueba
-          condition: event.alert.labels.alertname == "TestAlert"
+          condition: event.alert.labels.alertname is defined
           action:
             run_playbook:
               name: /rulebook/notify.yml
