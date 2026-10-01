@@ -20,6 +20,8 @@ spec:
           args:
             - --rulebook
             - /rulebook/rulebook.yml
+            - --inventory
+            - /rulebook/inventory.yml
           ports:
             - containerPort: 5000
               name: webhook

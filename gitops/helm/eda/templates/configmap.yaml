@@ -17,5 +17,10 @@ data:
           action:
             run_playbook:
               name: /rulebook/notify.yml
+  inventory.yml: |
+    all:
+      hosts:
+        localhost:
+          ansible_connection: local
   notify.yml: |
 {{ .Files.Get "files/notify.yml" | indent 4 }}
