@@ -86,7 +86,7 @@ spec:
             receivers:
               - name: alertas-para-eda
                 webhook_configs:
-                  - url: http://eda.eda.svc.cluster.local:5000
+                  - url: http://eda.eda.svc.cluster.local:5000/alerts
                     send_resolved: true
           alertmanagerSpec:
             logLevel: debug
