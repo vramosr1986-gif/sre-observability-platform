@@ -786,4 +786,169 @@ por toda la cadena con salida formateada:
 * **Alertmanager**: alertas, webhooks, receptores y modo debug
 * **EDA**: `ansible-rulebook`, sources, condiciones, acciones y inventario
 * **Ansible**: playbooks, inventario y módulo `ansible.builtin.uri`
-* **SRE**: observabilidad, alert
+* **SRE**: observabilidad, alerting y automatización de operaciones
+
+### Trampas que costaron tiempo
+
+**`syncOptions` cambió de sitio en ArgoCD v3.** En v2.x era `spec.syncOptions`; desde v3 la
+ruta válida es `spec.syncPolicy.syncOptions`. Con el layout antiguo, el API server hace
+*structural schema pruning* y **descarta el campo en silencio**, así que Git siempre declara
+algo que el cluster no tiene. El síntoma es un `root-app` que se queda `OutOfSync` para
+siempre con un bucle de autosync que nunca converge, mientras Argo reporta
+`successfully synced`. La pista está en el log del controller:
+
+```bash
+kubectl logs -n argocd argocd-application-controller-0 --since=5m | grep 'unknown field'
+```
+
+**Un cambio en `bootstrap/argocd-apps.yaml` se aplica refrescando `root-app`, no la app hija.**
+Las apps hijas no leen ese fichero: leen su propio chart o su propio path en el repo. Los
+values de Prometheus (por ejemplo, el receptor de Alertmanager) viven en `argocd-apps.yaml`,
+y solo `root-app` los lee. Se detecta mirando el `Revision` de la app hija: en vez de un hash
+de commit, muestra la **versión del chart** (`55.0.0`).
+
+```bash
+kubectl get application prometheus -n argocd -o jsonpath='{.status.sync.revision}'
+# → 55.0.0   (no es un commit, es la versión del chart)
+
+kubectl get application root-app -n argocd -o jsonpath='{.status.sync.revision}'
+# → 1974588  (esto sí es un commit de Git)
+```
+
+**`helm template` antes de commitear.** Un error de indentación en un `ConfigMap` o en un
+`values:` no se detecta hasta que Argo intenta renderizar el chart, y el mensaje de error
+(Helm ejecutado dentro de Argo) es mucho menos claro. `helm template <chart> <ruta>` valida el
+chart en local en un segundo:
+
+```bash
+helm template eda gitops/helm/eda
+```
+
+**Los logs de `ansible-rulebook` pueden estar mudos.** La imagen
+`quay.io/ansible/ansible-rulebook:v1.3.2` no vuelca a stdout, así que aunque EDA reciba las
+alertas y ejecute el playbook, no hay forma de verlo desde `kubectl logs`. Se comprueba
+indirectamente mirando los logs de Alertmanager (`msg="Notify success"`) y el webhook externo
+(`user-agent: ansible-httpget`).
+
+**Un `run_playbook` necesita inventario, siempre.** Aunque solo haya un host (`localhost`),
+Ansible se niega a ejecutar sin un inventario declarado. El error es explícito al arrancar:
+
+```
+ERROR - Terminating: Rule Alerta de prueba has an action run_playbook which needs inventory to be defined
+```
+
+La solución es doble: (1) añadir un `inventory.yml` al ConfigMap, y (2) pasarle a
+`ansible-rulebook` el flag `--inventory /rulebook/inventory.yml`.
+
+**EDA solo acepta POSTs en `/alerts`.** El source `ansible.eda.alertmanager` responde
+`405 Method Not Allowed` si le mandas un POST a la raíz (`/`). La URL del receptor de
+Alertmanager tiene que apuntar a `/alerts`:
+
+```yaml
+- url: http://eda.eda.svc.cluster.local:5000/alerts
+```
+
+Se detecta mirando la cabecera `Allow` de la respuesta:
+
+```bash
+kubectl run curl-test -n eda --rm -it --restart=Never --image=curlimages/curl -- \
+  curl -v -X POST http://eda:5000
+# < HTTP/1.1 405 Method Not Allowed
+# < Allow: GET,HEAD
+```
+
+**Un bucle de reconciliación puede *parecer* sano.** El mensaje de éxito del sync se refiere
+a que la operación se ejecutó, no a que el cluster haya cambiado. La señal fiable es que
+`status.sync.status` llegue a `Synced` y **se quede** ahí.
+
+**El `root_url` de Grafana decide si la UI funciona o no.** El chart `grafana` viene con
+`domain = grafana.local` por defecto, y eso hace que Grafana se builda la URL base
+`http://grafana.local:3000/`. Si abres la UI por `localhost:3000`, el navegador pide contra
+`grafana.local`, que no resuelve, y cada llamada a la API muere con `Failed to fetch`. El
+síntoma engaña porque **el datasource puede estar perfectamente configurado y el health check
+devolver `OK`**: el fallo es del navegador, no del backend. Se diagnostica mirando qué cree
+Grafana que es su URL base:
+
+```bash
+curl -s -u admin:admin http://localhost:3000/api/frontend/settings | grep -o '"appUrl":"[^"]*"'
+```
+
+**Una anotación en ArgoCD es un "one-shot".** El comando `kubectl annotate application ...`
+mete una anotación que Argo lee una vez y borra. Sirve para forzar un refresh inmediato
+sin esperar al ciclo de polling (~3 min). Para cambios permanentes, van en Git.
+
+**Los `port-forward` de `bootstrap.sh` sobreviven, pero los manuales no.** Los del script
+se lanzan con `nohup`, así que sobreviven al cierre de la terminal. Los que lanzas a mano
+con `kubectl port-forward` mueren al cerrar la terminal (a menos que los envuelvas en
+`nohup ... &`). Se comprueba con:
+
+```bash
+ps aux | grep "port-forward" | grep -v grep
+```
+
+---
+
+## Próximos pasos
+
+```text
+[x] Kubernetes / K3d
+[x] GitOps / ArgoCD
+[x] Helm
+[x] Prometheus
+[x] Grafana
+[x] Alertmanager
+[x] Node Exporter
+[x] kube-state-metrics
+[x] PrometheusRules propias (HighCPU, HighMemory)
+[x] Datasource de Prometheus en Grafana
+[x] Webhooks (Alertmanager → EDA)
+[x] Despliegue de EDA
+[x] Playbook de Ansible (notify.yml)
+[x] Inventario de Ansible (inventory.yml)
+[x] Flujo completo end-to-end (Prometheus → Webhook)
+[x] Script de demo (demo-eda.sh)
+[ ] Hacer visible la reacción de EDA (cambiar imagen a eda-server)
+[ ] Remediación real (escalar deployment, reiniciar pod)
+[ ] Simular incidencia real (stress-ng)
+[ ] Pruebas de incidentes
+[ ] Logs centralizados
+[ ] Mejoras de observabilidad
+[ ] Cloud
+```
+
+---
+
+## Proyecto en desarrollo
+
+Este repositorio representa un **laboratorio SRE en evolución**.
+
+La infraestructura base, la monitorización, las alertas propias, el datasource de Grafana y
+**la cadena completa de event-driven automation** (Prometheus → Alertmanager → EDA →
+Ansible → Webhook) ya están operativas, mientras que la remediación real sobre objetos de
+Kubernetes sigue en implementación.
+
+El objetivo final es disponer de una plataforma capaz de:
+
+```text
+Detectar
+   ↓
+Alertar
+   ↓
+Analizar
+   ↓
+Activar
+   ↓
+Remediar
+   ↓
+Verificar
+```
+
+manteniendo toda la infraestructura y configuración gestionadas como código.
+
+---
+
+## Autor
+
+**Victor Ramos** — [@vramosr1986-gif](https://github.com/vramosr1986-gif)
+
+Proyecto de aprendizaje y experimentación con **SRE, Kubernetes, GitOps, observabilidad y automatización**.
