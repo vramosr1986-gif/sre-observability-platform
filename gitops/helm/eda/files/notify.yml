@@ -1,7 +1,7 @@
 ---
 - name: Notificar alerta
   hosts: localhost
-  gather_facts: false
+  gather_facts: true
   tasks:
     - name: Hacer POST a webhook.site
       ansible.builtin.uri:
@@ -9,6 +9,10 @@
         method: POST
         body_format: json
         body:
-          alerta: "Prueba simple"
+          alerta: "🚨 Alerta recibida por EDA"
+          severidad: "critical"
+          origen: "Prometheus"
+          accion: "Notificación enviada"
+          timestamp: "{{ ansible_date_time.iso8601 | default('N/A') }}"
           mensaje: "Alerta recibida por EDA"
         status_code: 200
