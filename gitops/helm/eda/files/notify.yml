@@ -5,7 +5,7 @@
   tasks:
     - name: Hacer POST a webhook.site con alerta real
       ansible.builtin.uri:
-        url: https://webhook.site/4325c6a4-6efa-4af8-84fc-592905101139
+        url: https://webhook.site/015924ce-3860-4a56-9ccf-05efe5ee384d
         method: POST
         body_format: json
         body:
