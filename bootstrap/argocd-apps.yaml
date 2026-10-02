@@ -86,17 +86,18 @@ spec:
         alertmanager:
           config:
             route:
-              receiver: alertas-para-eda
+              receiver: default
               group_by:
                 - alertname
               group_wait: 10s
-              group_interval: 30s
+              group_interval: 5m
               repeat_interval: 30s
               routes:
                 - receiver: alertas-para-eda
                   matchers:
-                    - alertname =~ ".*"
+                    - alertname =~ "^(HighCPU|HighMemory|PodNotReady)$"
             receivers:
+              - name: default
               - name: alertas-para-eda
                 webhook_configs:
                   - url: http://eda.eda.svc.cluster.local:5000/alerts
