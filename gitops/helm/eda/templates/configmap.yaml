@@ -6,21 +6,23 @@ data:
   rulebook.yml: |
     ---
     - name: Reaccionar a alertas
-      hosts: all
+      hosts: localhost
       sources:
         - ansible.eda.alertmanager:
             host: 0.0.0.0
             port: 5000
       rules:
-        - name: Alerta de prueba
+        - name: Alertas SRE
           condition: event.alert.labels.alertname is defined
           action:
             run_playbook:
               name: /rulebook/notify.yml
+
   inventory.yml: |
     all:
       hosts:
         localhost:
           ansible_connection: local
+
   notify.yml: |
 {{ .Files.Get "files/notify.yml" | indent 4 }}
