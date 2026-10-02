@@ -11,13 +11,9 @@ data:
         - ansible.eda.alertmanager:
             host: 0.0.0.0
             port: 5000
-          filters:
-            - eda.builtin.json_filter:
-                exclude_keys:
-                  - "meta.hosts"
       rules:
         - name: Alertas SRE
-          condition: event.alert.labels.alertname is defined
+          condition: event.alert.labels.alertname in ["HighCPU", "HighMemory", "PodNotReady"]
           action:
             run_playbook:
               name: /rulebook/notify.yml

@@ -22,3 +22,16 @@
           recibido: {{ ansible_eda.event.meta.received_at | default('unknown') }}
           uuid: {{ ansible_eda.event.meta.uuid | default('unknown') }}
           ==============================
+    - name: Enviar alerta propia a webhook.site
+      ansible.builtin.uri:
+        url: https://webhook.site/015924ce-3860-4a56-9ccf-05efe5ee384d
+        method: POST
+        body_format: json
+        body:
+          source: prometheus-alertmanager
+          alertname: "{{ ansible_eda.event.alert.labels.alertname }}"
+          status: "{{ ansible_eda.event.alert.status | default('unknown') }}"
+          severity: "{{ ansible_eda.event.alert.labels.severity | default('unknown') }}"
+          labels: "{{ ansible_eda.event.alert.labels }}"
+          annotations: "{{ ansible_eda.event.alert.annotations | default({}) }}"
+        status_code: [200, 201, 202]
