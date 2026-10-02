@@ -39,8 +39,8 @@ spec:
                         avg by(instance) (
                           rate(node_cpu_seconds_total{mode="idle"}[5m])
                         ) * 100
-                      ) > 80
-                    for: 5m
+                      ) > 30
+                    for: 1m
 
                     labels:
                       severity: warning
@@ -61,8 +61,8 @@ spec:
                           /
                           node_memory_MemTotal_bytes
                         )
-                      ) * 100 > 80
-                    for: 5m
+                      ) * 100 > 30
+                    for: 1m
 
                     labels:
                       severity: warning
@@ -70,6 +70,19 @@ spec:
                     annotations:
                       summary: "Memoria alta en {{ $labels.instance }}"
                       description: "Uso de memoria superior al 80% durante 5 minutos en {{ $labels.instance }}"
+          pod-not-ready:
+            groups:
+             - name: pods
+               rules:
+                 - alert: PodNotReady
+                   expr: |
+                     kube_pod_status_ready{condition="true", namespace!~"kube-system|argocd"} == 0
+                   for: 1m
+                   labels:
+                     severity: warning
+                   annotations:
+                     summary: "Pod no listo: {{ $labels.pod }}"
+                     description: "El pod {{ $labels.pod }} lleva más de 1 minuto sin estar Ready"          
         alertmanager:
           config:
             route:
