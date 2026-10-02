@@ -26,5 +26,15 @@ data:
       hosts:
         localhost:
           ansible_connection: local
+        test:
+          ansible_connection: local
+        172.19.0.2:
+          ansible_connection: local
+        172.19.0.3:
+          ansible_connection: local
+        172.19.0.5:
+          ansible_connection: local
+        10.42.2.19:
+          ansible_connection: local
   notify.yml: |
 {{ .Files.Get "files/notify.yml" | indent 4 }}

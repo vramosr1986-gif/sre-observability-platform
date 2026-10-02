@@ -4,14 +4,21 @@
   gather_facts: false
   tasks:
     - name: Guardar alerta en fichero
-      ansible.builtin.copy:
-        content: |
+      ansible.builtin.blockinfile:
+        path: /tmp/eventos.txt
+        create: true
+        marker: ""
+        insertafter: EOF
+        block: |
+          ==============================
           alerta: {{ ansible_eda.event.alert.labels.alertname | default('desconocida') }}
           severidad: {{ ansible_eda.event.alert.labels.severity | default('unknown') }}
           estado: {{ ansible_eda.event.alert.status | default('unknown') }}
+          instancia: {{ ansible_eda.event.alert.labels.instance | default('unknown') }}
+          pod: {{ ansible_eda.event.alert.labels.pod | default('unknown') }}
+          namespace: {{ ansible_eda.event.alert.labels.namespace | default('unknown') }}
           rule: {{ ansible_eda.rule | default('unknown') }}
           ruleset: {{ ansible_eda.ruleset | default('unknown') }}
           recibido: {{ ansible_eda.event.meta.received_at | default('unknown') }}
           uuid: {{ ansible_eda.event.meta.uuid | default('unknown') }}
-          timestamp: {{ ansible_date_time.iso8601 | default('N/A') }}
-        dest: "/tmp/evento-{{ ansible_eda.event.alert.labels.alertname }}.txt"
+          ==============================
