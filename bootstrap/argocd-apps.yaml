@@ -47,7 +47,7 @@ spec:
 
                     annotations:
                       summary: "CPU alta en {{ $labels.instance }}"
-                      description: "Uso de CPU superior al 80% durante 5 minutos en {{ $labels.instance }}"
+                      description: "Uso de CPU superior al 30% durante 1 minutos en {{ $labels.instance }}"
 
           high-memory-alert:
             groups:
@@ -69,14 +69,14 @@ spec:
 
                     annotations:
                       summary: "Memoria alta en {{ $labels.instance }}"
-                      description: "Uso de memoria superior al 80% durante 5 minutos en {{ $labels.instance }}"
+                      description: "Uso de memoria superior al 30% durante 1 minutos en {{ $labels.instance }}"
           pod-not-ready:
             groups:
              - name: pods
                rules:
                  - alert: PodNotReady
                    expr: |
-                     kube_pod_status_ready{condition="true", namespace!~"kube-system|argocd"} == 0
+                     kube_pod_status_ready{condition="false", namespace!~"kube-system|argocd"} == 1
                    for: 1m
                    labels:
                      severity: warning
