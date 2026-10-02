@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: false
   tasks:
-    - name: Guardar evento en fichero
+    - name: Guardar todas las variables
       ansible.builtin.copy:
-        content: "{{ event | default('sin evento') | to_nice_json }}"
-        dest: /tmp/evento.json
+        content: "{{ vars | to_nice_json }}"
+        dest: /tmp/vars.json
