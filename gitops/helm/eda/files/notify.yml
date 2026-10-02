@@ -3,12 +3,7 @@
   hosts: localhost
   gather_facts: false
   tasks:
-    - name: Volcar evento completo
-      ansible.builtin.uri:
-        url: https://webhook.site/4325c6a4-6efa-4af8-84fc-592905101139
-        method: POST
-        body_format: json
-        body:
-          evento_completo: "{{ event | default('sin evento') }}"
-          vars_disponibles: "{{ vars | default('sin vars') }}"
-        status_code: 200
+    - name: Guardar evento en fichero
+      ansible.builtin.copy:
+        content: "{{ event | default('sin evento') | to_nice_json }}"
+        dest: /tmp/evento.json
