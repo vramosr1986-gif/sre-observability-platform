@@ -1,22 +1,25 @@
 ---
-- name: Notificar alerta
+- name: Notificar alertas
   hosts: localhost
   gather_facts: false
+
   tasks:
     - name: Guardar alerta en fichero
       ansible.builtin.blockinfile:
         path: /tmp/eventos.txt
         create: true
-        marker: ""
         insertafter: EOF
+        marker: "# {mark} EDA {{ ansible_eda.event.meta.uuid | default('sin-uuid') }}"
         block: |
           ==============================
-          alerta: {{ ansible_eda.event.alert.labels.alertname | default('desconocida') }}
-          severidad: {{ ansible_eda.event.alert.labels.severity | default('unknown') }}
-          estado: {{ ansible_eda.event.alert.status | default('unknown') }}
-          instancia: {{ ansible_eda.event.alert.labels.instance | default('unknown') }}
-          pod: {{ ansible_eda.event.alert.labels.pod | default('unknown') }}
-          namespace: {{ ansible_eda.event.alert.labels.namespace | default('unknown') }}
+          {% for alert in ansible_eda.event.payload.alerts | default([]) %}
+          alerta: {{ alert.labels.alertname | default('desconocida') }}
+          severidad: {{ alert.labels.severity | default('unknown') }}
+          estado: {{ alert.status | default('unknown') }}
+          instancia: {{ alert.labels.instance | default('unknown') }}
+          pod: {{ alert.labels.pod | default('unknown') }}
+          namespace: {{ alert.labels.namespace | default('unknown') }}
+          {% endfor %}
           rule: {{ ansible_eda.rule | default('unknown') }}
           ruleset: {{ ansible_eda.ruleset | default('unknown') }}
           recibido: {{ ansible_eda.event.meta.received_at | default('unknown') }}
