@@ -14,4 +14,4 @@
           recibido: {{ ansible_eda.event.meta.received_at | default('unknown') }}
           uuid: {{ ansible_eda.event.meta.uuid | default('unknown') }}
           timestamp: {{ ansible_date_time.iso8601 | default('N/A') }}
-        dest: /tmp/evento.txt
+        dest: "/tmp/evento-{{ ansible_eda.event.alert.labels.alertname }}.txt"
