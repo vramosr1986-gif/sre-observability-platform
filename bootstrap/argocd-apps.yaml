@@ -39,7 +39,7 @@ spec:
                         avg by(instance) (
                           rate(node_cpu_seconds_total{mode="idle"}[5m])
                         ) * 100
-                      ) > 30
+                      ) > 10
                     for: 1m
 
                     labels:
@@ -61,7 +61,7 @@ spec:
                           /
                           node_memory_MemTotal_bytes
                         )
-                      ) * 100 > 30
+                      ) * 100 > 10
                     for: 1m
 
                     labels:
