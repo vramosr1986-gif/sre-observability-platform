@@ -6,7 +6,7 @@
 ![Grafana](https://img.shields.io/badge/Dashboards-Grafana-F46800?logo=grafana)
 ![EDA](https://img.shields.io/badge/Automation-EDA-EB5424?logo=ansible)
 
-Plataforma SRE desplegada en Kubernetes con GitOps, monitorización y auto-remediación.
+Laboratorio reproducible de observabilidad SRE y automatización de alertas en Kubernetes.
 
 Todo el proyecto está gestionado como código y actualmente se encuentra **en desarrollo**.
 
@@ -16,9 +16,9 @@ Todo el proyecto está gestionado como código y actualmente se encuentra **en d
 
 🟡 **Proyecto en desarrollo**
 
-La infraestructura principal está desplegada y funcionando. Prometheus evalúa las alertas propias `HighCPU`, `HighMemory` y `PodNotReady`; Alertmanager las enruta a EDA; EDA ejecuta un playbook que registra el evento en `/tmp/eventos.txt` y envía un POST a webhook.site.
+La demo muestra el recorrido de una alerta: Prometheus la detecta, Alertmanager la envía a EDA y un playbook de Ansible registra el evento y lo notifica a webhook.site. Sirve para reproducir y verificar los componentes principales del flujo.
 
-La remediación real sigue pendiente: el playbook registra y notifica, pero todavía no modifica recursos del clúster.
+El alcance del proyecto es la detección y notificación de alertas; el playbook registra y comunica eventos, sin ejecutar acciones correctivas en Kubernetes.
 
 ### Objetivos cumplidos
 
@@ -54,14 +54,13 @@ La remediación real sigue pendiente: el playbook registra y notifica, pero toda
 * [x] Limitar EDA a las tres alertas propias y ejecutar el playbook en `localhost`
 * [x] Registrar alertas procesadas en `/tmp/eventos.txt`
 * [x] Enviar el payload de alerta a webhook.site
-* [x] Verificar el flujo Prometheus → Alertmanager → EDA → Ansible
+* [x] Demostrar el flujo Prometheus → Alertmanager → EDA → Ansible → webhook.site
 * [x] Crear script de demo `demo-eda.sh`
 
 ### Objetivos pendientes
 
-* [ ] Remediar de verdad (escalar un deployment, reiniciar un pod...)
-* [ ] Cambiar la acción del rulebook a `run_playbook` sobre objetos de Kubernetes
-* [ ] Simular una incidencia real (estrés de CPU con `stress-ng`)
+* [x] Validar una prueba de carga con `stress-ng` y confirmar `HighCPU` en firing
+* [ ] Provisionar el dashboard de Grafana desde Git para que sea reproducible
 * [ ] Hacer persistente `/tmp/eventos.txt` fuera del filesystem efímero del pod
 * [ ] Mejorar la visibilidad de ejecuciones EDA con logs estructurados
 * [ ] Añadir observabilidad de logs
@@ -104,11 +103,19 @@ Dashboard inicial para visualizar las métricas de la infraestructura Kubernetes
 
 ![Grafana Dashboard](docs/screenshots/grafana-dashboard.jpeg)
 
-### Prometheus — CPU Usage
+### Prometheus — Regla HighCPU (captura anterior)
 
-Consulta de métricas de utilización de CPU mediante PromQL.
+La captura muestra una versión anterior de la regla, inactiva, con umbral >80% durante 5 minutos.
+No es evidencia de una prueba de estrés ni representa el umbral actual.
 
 ![Prometheus CPU Usage](docs/screenshots/prometeus-cpu-usage.jpeg)
+
+### Prometheus — HighCPU durante la prueba de estrés
+
+`HighCPU` llegó a `firing` en tres instancias durante una prueba acotada con `stress-ng`.
+La captura muestra la regla activa, su expresión y los valores observados.
+
+![HighCPU firing durante stress-ng](docs/screenshots/prometheus-highcpu-firing.png)
 
 ### Alertmanager — Alertas
 
@@ -116,9 +123,9 @@ Alertas gestionadas por Alertmanager, con los grupos y firing rules del clúster
 
 ![Alertmanager](docs/screenshots/alertmanager.jpeg)
 
-### Capturas recientes de diagnóstico
+### Prometheus y Alertmanager durante la demo
 
-La consulta de Prometheus muestra la métrica de disponibilidad de pods y las reglas propias activas. Las capturas de Alertmanager y de reglas son de diagnóstico y pueden reflejar una configuración anterior.
+Capturas tomadas al reproducir una alerta de pod no listo y revisar las alertas en Prometheus y Alertmanager.
 
 ![Consulta de disponibilidad de pods en Prometheus](docs/screenshots/prometeus%20graph.png)
 
@@ -134,14 +141,14 @@ Estado de los pods desplegados en el cluster.
 
 ![Kubernetes ](docs/screenshots/kubernetes.jpeg)
 
-### Flujo completo de auto-remediación
+### Demostración del flujo de alertas
 
-Ejecución del script `demo-eda.sh`, que inyecta una alerta y muestra el recorrido completo
-por toda la cadena: Prometheus → Alertmanager → EDA → Ansible → Webhook.
+Ejecución de `demo-eda.sh` para mostrar el recorrido de una alerta desde Prometheus hasta EDA,
+Ansible y webhook.site. Es una demostración de notificación; no realiza cambios correctivos en Kubernetes.
 
 ![Flujo completo](docs/screenshots/flujo-prometheus-EDA-webhook-terminal.png)
 
-### Resultado final — POST recibido en webhook.site
+### Notificación recibida en webhook.site
 
 El playbook de Ansible hace un POST HTTP al webhook con los datos de la alerta. El
 `user-agent: ansible-httpget` confirma que el POST lo ha enviado EDA (no un navegador ni
@@ -242,10 +249,10 @@ sobrescribe con la versión de Git en cuanto lo detecta (`selfHeal: true`).
 | **Ingress**           | Nginx Ingress                 | ✅ activo    | Exponer servicios               |
 | **Métricas**          | Prometheus + Node Exporter    | ✅ activo    | Recoger métricas                |
 | **Estado Kubernetes** | kube-state-metrics            | ✅ activo    | Métricas de objetos Kubernetes  |
-| **Dashboards**        | Grafana 10.2.2                | ✅ activo    | Visualización                   |
+| **Dashboards**        | Grafana 10.2.2                | ✅ manual    | Dashboard importado en la UI     |
 | **Alertas**           | Alertmanager                  | ✅ activo    | Gestionar y enviar alertas      |
-| **Auto-remediación**  | EDA (ansible-rulebook) 1.3.2  | ✅ activo    | Escucha alertas de Alertmanager |
-| **Remediación**       | Ansible                       | ✅ activo    | Ejecutar playbooks              |
+| **Automatización**    | EDA (ansible-rulebook) 1.3.2  | ✅ demo      | Recibir alertas y lanzar acciones |
+| **Playbook**          | Ansible                       | ✅ demo      | Registrar y notificar eventos    |
 
 ---
 
@@ -645,7 +652,7 @@ Prometheus  ──alerta propia──▶  Alertmanager  ──webhook /endpoint�
 
 ---
 
-## Auto-remediación (EDA)
+## Automatización de alertas (EDA)
 
 EDA está desplegado como una Application más de ArgoCD (`eda-app`), con su propio chart en
 `gitops/helm/eda/`. La imagen usada es `quay.io/ansible/ansible-rulebook:v1.3.2`, la CLI de
@@ -817,6 +824,7 @@ por toda la cadena con salida formateada:
 * `/tmp/eventos.txt` está en el filesystem efímero del contenedor EDA. Un reemplazo del pod lo elimina; usa un volumen si necesitas conservar el historial.
 * `Notify success` confirma que Alertmanager entregó el webhook a EDA, no que el playbook o el webhook externo terminaran correctamente.
 * EDA usa `event.meta.hosts` como límite para `run_playbook`. El filtro configurado excluye la clave `hosts`; Ansible ejecuta el playbook en `localhost`.
+* `HighCPU` usa una ventana de 5 minutos y `for: 1m`; una prueba breve puede elevar el uso del nodo sin que la alerta llegue a `firing`.
 
 Para el análisis detallado de las causas y su resolución, consulta [Informe del flujo de alertas](docs/informe-flujo-alertas.md).
 
@@ -916,17 +924,16 @@ ps aux | grep "port-forward" | grep -v grep
 [x] Alertmanager
 [x] Node Exporter
 [x] kube-state-metrics
-[x] PrometheusRules propias (HighCPU, HighMemory)
+[x] PrometheusRules propias (HighCPU, HighMemory, PodNotReady)
 [x] Datasource de Prometheus en Grafana
 [x] Webhooks (Alertmanager → EDA)
 [x] Despliegue de EDA
 [x] Playbook de Ansible (notify.yml)
 [x] Inventario de Ansible (inventory.yml)
-[x] Flujo completo end-to-end (Prometheus → Webhook)
+[x] Demo reproducible del flujo de alertas (Prometheus → Webhook)
 [x] Script de demo (demo-eda.sh)
-[ ] Hacer visible la reacción de EDA (cambiar imagen a eda-server)
-[ ] Remediación real (escalar deployment, reiniciar pod)
-[ ] Simular incidencia real (stress-ng)
+[x] Prueba acotada de estrés CPU con `stress-ng`; `HighCPU` llegó a firing en tres instancias
+[ ] Provisionar el dashboard de Grafana desde Git
 [ ] Pruebas de incidentes
 [ ] Logs centralizados
 [ ] Mejoras de observabilidad
@@ -939,10 +946,9 @@ ps aux | grep "port-forward" | grep -v grep
 
 Este repositorio representa un **laboratorio SRE en evolución**.
 
-La infraestructura base, la monitorización, las alertas propias, el datasource de Grafana y
-**la cadena completa de event-driven automation** (Prometheus → Alertmanager → EDA →
-Ansible → Webhook) ya están operativas, mientras que la remediación real sobre objetos de
-Kubernetes sigue en implementación.
+La infraestructura base, la monitorización, las alertas y la demo del flujo de notificación
+(Prometheus → Alertmanager → EDA → Ansible → Webhook) están implementadas. El playbook permite
+reproducir el recorrido y observar el evento; no hace remediación sobre objetos de Kubernetes.
 
 El objetivo final es disponer de una plataforma capaz de:
 

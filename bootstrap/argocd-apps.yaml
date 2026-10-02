@@ -47,7 +47,7 @@ spec:
 
                     annotations:
                       summary: "CPU alta en {{ $labels.instance }}"
-                      description: "Uso de CPU superior al 30% durante 1 minutos en {{ $labels.instance }}"
+                      description: "Uso de CPU superior al 10% durante 1 minuto en {{ $labels.instance }}"
 
           high-memory-alert:
             groups:
