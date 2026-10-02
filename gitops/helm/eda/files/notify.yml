@@ -1,18 +1,14 @@
 ---
 - name: Notificar alerta
   hosts: localhost
-  gather_facts: true
+  gather_facts: false
   tasks:
-    - name: Hacer POST a webhook.site
+    - name: Volcar evento completo
       ansible.builtin.uri:
         url: https://webhook.site/4325c6a4-6efa-4af8-84fc-592905101139
         method: POST
         body_format: json
         body:
-          alerta: "🚨 Alerta recibida por EDA"
-          severidad: "critical"
-          origen: "Prometheus"
-          accion: "Notificación enviada"
-          timestamp: "{{ ansible_date_time.iso8601 | default('N/A') }}"
-          mensaje: "Alerta recibida por EDA"
+          evento_completo: "{{ event | default('sin evento') }}"
+          vars_disponibles: "{{ vars | default('sin vars') }}"
         status_code: 200
