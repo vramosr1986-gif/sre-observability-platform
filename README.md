@@ -16,9 +16,9 @@ Todo el proyecto está gestionado como código y actualmente se encuentra **en d
 
 🟡 **Proyecto en desarrollo**
 
-La infraestructura principal está desplegada y funcionando. **La cadena completa de event-driven automation está operativa**: Prometheus detecta, Alertmanager enruta al receptor `alertas-para-eda`, EDA recibe la alerta, ejecuta un playbook de Ansible con `run_playbook`, y el playbook hace un POST HTTP a un webhook externo con los datos de la alerta.
+La infraestructura principal está desplegada y funcionando. Prometheus evalúa las alertas propias `HighCPU`, `HighMemory` y `PodNotReady`; Alertmanager las enruta a EDA; EDA ejecuta un playbook que registra el evento en `/tmp/eventos.txt` y envía un POST a webhook.site.
 
-Lo único que queda pendiente es la parte de remediación **real** (que el playbook haga algo útil sobre el cluster: escalar un deployment, reiniciar un pod, etc.).
+La remediación real sigue pendiente: el playbook registra y notifica, pero todavía no modifica recursos del clúster.
 
 ### Objetivos cumplidos
 
@@ -38,7 +38,7 @@ Lo único que queda pendiente es la parte de remediación **real** (que el playb
 * [x] Configurar monitorización de Kubernetes
 * [x] Comprobar targets de Prometheus
 * [x] Comprobar métricas mediante PromQL
-* [x] Crear reglas de alerta propias con `PrometheusRule` (`HighCPU`, `HighMemory`)
+* [x] Crear reglas de alerta propias (`HighCPU`, `HighMemory`, `PodNotReady`)
 * [x] Configurar el datasource de Prometheus en Grafana
 * [x] Verificar despliegues mediante ArgoCD
 * [x] Verificar el rebuild completo desde cero
@@ -49,11 +49,12 @@ Lo único que queda pendiente es la parte de remediación **real** (que el playb
 * [x] Verificar que Alertmanager envía los POST a EDA (`Notify success`)
 * [x] Configurar el receptor con nombre descriptivo (`alertas-para-eda`)
 * [x] Activar el modo `debug` en Alertmanager para ver las notificaciones
-* [x] Configurar el receptor para apuntar a `/alerts` en EDA
+* [x] Configurar el receptor para apuntar a `/endpoint` en EDA
 * [x] Desplegar el inventario de Ansible en el ConfigMap de EDA
-* [x] Crear un playbook de Ansible que ejecuta EDA al recibir la alerta
-* [x] Verificar que EDA ejecuta el playbook (`ansible-httpget` en el POST)
-* [x] Verificar el flujo completo end-to-end (Prometheus → webhook.site)
+* [x] Limitar EDA a las tres alertas propias y ejecutar el playbook en `localhost`
+* [x] Registrar alertas procesadas en `/tmp/eventos.txt`
+* [x] Enviar el payload de alerta a webhook.site
+* [x] Verificar el flujo Prometheus → Alertmanager → EDA → Ansible
 * [x] Crear script de demo `demo-eda.sh`
 
 ### Objetivos pendientes
@@ -61,7 +62,8 @@ Lo único que queda pendiente es la parte de remediación **real** (que el playb
 * [ ] Remediar de verdad (escalar un deployment, reiniciar un pod...)
 * [ ] Cambiar la acción del rulebook a `run_playbook` sobre objetos de Kubernetes
 * [ ] Simular una incidencia real (estrés de CPU con `stress-ng`)
-* [ ] Hacer visible la reacción de EDA (cambiar imagen a `eda-server` o añadir logs)
+* [ ] Hacer persistente `/tmp/eventos.txt` fuera del filesystem efímero del pod
+* [ ] Mejorar la visibilidad de ejecuciones EDA con logs estructurados
 * [ ] Añadir observabilidad de logs
 * [ ] Valorar integración con Elasticsearch
 * [ ] Añadir más métricas de Kubernetes
@@ -113,6 +115,18 @@ Consulta de métricas de utilización de CPU mediante PromQL.
 Alertas gestionadas por Alertmanager, con los grupos y firing rules del clúster.
 
 ![Alertmanager](docs/screenshots/alertmanager.jpeg)
+
+### Capturas recientes de diagnóstico
+
+La consulta de Prometheus muestra la métrica de disponibilidad de pods y las reglas propias activas. Las capturas de Alertmanager y de reglas son de diagnóstico y pueden reflejar una configuración anterior.
+
+![Consulta de disponibilidad de pods en Prometheus](docs/screenshots/prometeus%20graph.png)
+
+![Reglas y alertas en Prometheus](docs/screenshots/prometeus-con-alertas.png)
+
+![Alertmanager: grupos de alertas](docs/screenshots/alertmanager-con-alertas.png)
+
+![Alertmanager: captura alternativa](docs/screenshots/alertmanager-conalertas.jpeg)
 
 ### Kubernetes
 
@@ -177,7 +191,7 @@ un `curl` manual).
      │      │  Exporter │
      │      └───────────┘
      │
-     │  webhook POST a /alerts
+    │  webhook POST a /endpoint
      ▼
 ┌────────────┐
 │     EDA    │   ← activo (ns eda)
@@ -371,7 +385,7 @@ cat /tmp/sre-lab-portforwards.map
 | **Prometheus**   | 9091               | http://localhost:9091           |
 | **Alertmanager** | 9093               | http://localhost:9093           |
 | **demo-app**     | 8082               | http://localhost:8082           |
-| **EDA**          | 5000               | http://localhost:5000/alerts (solo POST) |
+| **EDA**          | 5000               | http://localhost:5000/endpoint (solo POST) |
 
 > Si un puerto ya está ocupado (por ejemplo, porque tienes otro `port-forward` vivo), el
 > script busca el siguiente libre y avisa por pantalla. Consulta siempre el fichero
@@ -528,13 +542,14 @@ Los targets con valor `1` en la consulta `up` están siendo monitorizados correc
 
 ### Reglas propias
 
-Ya existen **dos reglas de alerta propias**, definidas en `bootstrap/argocd-apps.yaml` dentro
+Ya existen **tres reglas de alerta propias**, definidas en `bootstrap/argocd-apps.yaml` dentro
 de `additionalPrometheusRulesMap` y desplegadas como objetos `PrometheusRule`:
 
 | Alerta       | Namespace | Qué detecta                                 |
 | ------------ | --------- | ------------------------------------------- |
-| `HighCPU`    | `cpu`     | CPU > 80% sostenida 5 min por instancia     |
-| `HighMemory` | `memory`  | Memoria usada > 80% del total durante 5 min |
+| `HighCPU`    | `cpu`     | Uso de CPU > 10% durante 1 minuto por instancia |
+| `HighMemory` | `memory`  | Memoria usada > 10% durante 1 minuto por nodo |
+| `PodNotReady` | `pods`   | Pod no listo durante 1 minuto, excluyendo `kube-system` y `argocd` |
 
 ```yaml
 additionalPrometheusRulesMap:
@@ -548,8 +563,8 @@ additionalPrometheusRulesMap:
                 avg by(instance) (
                   rate(node_cpu_seconds_total{mode="idle"}[5m])
                 ) * 100
-              ) > 80
-            for: 5m
+              ) > 10
+                for: 1m
             labels:
               severity: warning
 ```
@@ -567,45 +582,44 @@ kubectl exec -n observability "$PROM" -c prometheus -- \
 `state=inactive` con `health=ok` significa que la regla existe y se evalúa, pero su
 condición no se cumple. Eso es lo esperado en un cluster sano.
 
-> **Ruido esperado en K3d:** las reglas `KubeControllerManagerDown`, `KubeProxyDown` y
-> `KubeSchedulerDown` del propio chart salen perpetuamente en `firing`. K3d es un cluster de
-> un solo nodo y no expone esos componentes del control plane, así que **no es un fallo**.
-> Las alertas propias (`HighCPU`, `HighMemory`) están correctamente inactivas.
+> **Ruido esperado en K3d:** algunas reglas predeterminadas del chart pueden aparecer en `firing`
+> porque el clúster local no expone todos los targets del control plane. El enrutamiento a EDA se
+> limita a las tres alertas propias.
 
 ### Receptor de Alertmanager
 
-Alertmanager está configurado para enviar **todas** las alertas a EDA, y **concretamente al
-endpoint `/alerts`** (no a la raíz):
+Alertmanager envía a EDA únicamente las alertas propias mediante una subruta con allowlist. El
+receptor `default` no tiene integraciones:
 
 ```yaml
 alertmanager:
   config:
     route:
-      receiver: alertas-para-eda
+      receiver: default
       group_by:
         - alertname
       group_wait: 10s
       group_interval: 30s
-      repeat_interval: 1h
+      repeat_interval: 30s
       routes:
         - receiver: alertas-para-eda
           matchers:
-            - alertname =~ ".*"
+            - alertname =~ "^(HighCPU|HighMemory|PodNotReady)$"
     receivers:
+      - name: default
       - name: alertas-para-eda
         webhook_configs:
-          - url: http://eda.eda.svc.cluster.local:5000/alerts
+          - url: http://eda.eda.svc.cluster.local:5000/endpoint
             send_resolved: true
   alertmanagerSpec:
     logLevel: debug
 ```
 
 * `receiver: alertas-para-eda` → nombre libre del receptor (antes era `eda-webhook`).
-* `webhook_configs` → el receptor hace un POST HTTP al endpoint de EDA.
-* **`url: .../alerts`** → EDA solo acepta POSTs en `/alerts`. Si apuntas a `/`, responde
-  `405 Method Not Allowed`.
+* La expresión regular enruta solo `HighCPU`, `HighMemory` y `PodNotReady`; las reglas default no se envían a EDA.
+* `webhook_configs` → el receptor hace un POST HTTP al endpoint `/endpoint` de EDA.
 * `send_resolved: true` → también se notifica cuando la alerta se resuelve.
-* `logLevel: debug` → para ver cada notificación en los logs.
+* `group_interval: 30s` y `repeat_interval: 30s` permiten iterar rápidamente durante una demostración.
 
 Verificar que EDA recibe las alertas, mirando los logs de Alertmanager:
 
@@ -620,12 +634,12 @@ Cuando todo funciona, se ven líneas como:
 level=debug component=dispatcher receiver=alertas-para-eda integration=webhook[0] msg="Notify success" attempts=1
 ```
 
-Ese `Notify success` significa que el POST ha llegado a EDA con éxito.
+`Notify success` confirma la entrega desde Alertmanager a EDA.
 
 ### Flujo de alertas
 
 ```text
-Prometheus  ──alerta──▶  Alertmanager  ──webhook /alerts──▶  EDA  ──▶  Ansible
+Prometheus  ──alerta propia──▶  Alertmanager  ──webhook /endpoint──▶  EDA  ──▶  Ansible
                               (✅ activo)       (✅ activo)         (✅ activo)
 ```
 
@@ -646,7 +660,7 @@ El chart de EDA tiene **tres ficheros clave** que se montan como ConfigMap y que
 | ------- | ----------------- | ------------ |
 | `rulebook.yml` | Inline en `configmap.yaml` | Qué escucha EDA y cómo reacciona |
 | `notify.yml` | `files/notify.yml` | El playbook de Ansible que se ejecuta |
-| `inventory.yml` | `files/inventory.yml` | Los hosts sobre los que ejecutar Ansible |
+| `inventory.yml` | Inline en `templates/configmap.yaml` | Inventario de Ansible, con `localhost` para el playbook local |
 
 Los tres llegan al pod como ficheros en `/rulebook/`:
 
@@ -664,14 +678,14 @@ Vive en el `ConfigMap` `eda-rulebook`, y define qué escucha EDA y cómo reaccio
 ```yaml
 ---
 - name: Reaccionar a alertas
-  hosts: all
+  hosts: localhost
   sources:
     - ansible.eda.alertmanager:
         host: 0.0.0.0
         port: 5000
   rules:
-    - name: Alerta de prueba
-      condition: event.alert.labels.alertname is defined
+    - name: Alertas SRE
+      condition: event.alert.labels.alertname in ["HighCPU", "HighMemory", "PodNotReady"]
       action:
         run_playbook:
           name: /rulebook/notify.yml
@@ -679,8 +693,9 @@ Vive en el `ConfigMap` `eda-rulebook`, y define qué escucha EDA y cómo reaccio
 
 * `source: ansible.eda.alertmanager` → EDA entiende el formato de Alertmanager y desempaqueta
   cada alerta del array `alerts`, generando un evento por alerta.
-* `condition` → filtra qué alerta dispara la regla. Ahora mismo matchea **cualquier** alerta
-  con `alertname` definido.
+* `condition` → permite solo las alertas propias `HighCPU`, `HighMemory` y `PodNotReady`.
+* `eda.builtin.json_filter` excluye la clave `hosts` del evento para que el playbook se ejecute
+  contra `localhost` y no limite Ansible a una instancia de Prometheus.
 * `action: run_playbook` → ejecuta el playbook de Ansible `/rulebook/notify.yml`.
 
 ### El playbook (`notify.yml`)
@@ -689,24 +704,38 @@ Vive en el `ConfigMap` `eda-rulebook`, y define qué escucha EDA y cómo reaccio
 ---
 - name: Notificar alerta
   hosts: localhost
-  gather_facts: true
+  gather_facts: false
   tasks:
-    - name: Hacer POST a webhook.site
+    - name: Guardar alerta en fichero
+      ansible.builtin.blockinfile:
+        path: /tmp/eventos.txt
+        create: true
+        marker: ""
+        insertafter: EOF
+        block: |
+          alerta: {{ ansible_eda.event.alert.labels.alertname | default('desconocida') }}
+          severidad: {{ ansible_eda.event.alert.labels.severity | default('unknown') }}
+          estado: {{ ansible_eda.event.alert.status | default('unknown') }}
+          instancia: {{ ansible_eda.event.alert.labels.instance | default('unknown') }}
+          pod: {{ ansible_eda.event.alert.labels.pod | default('unknown') }}
+          namespace: {{ ansible_eda.event.alert.labels.namespace | default('unknown') }}
+    - name: Enviar alerta propia a webhook.site
       ansible.builtin.uri:
-        url: https://webhook.site/4325c6a4-6efa-4af8-84fc-592905101139
+        url: https://webhook.site/015924ce-3860-4a56-9ccf-05efe5ee384d
         method: POST
         body_format: json
         body:
-          alerta: "🚨 Alerta recibida por EDA"
-          severidad: "critical"
-          origen: "Prometheus"
-          accion: "Notificación enviada"
-          timestamp: "{{ ansible_date_time.iso8601 | default('N/A') }}"
-          mensaje: "Alerta recibida por EDA"
-        status_code: 200
+          source: prometheus-alertmanager
+          alertname: "{{ ansible_eda.event.alert.labels.alertname }}"
+          status: "{{ ansible_eda.event.alert.status | default('unknown') }}"
+          severity: "{{ ansible_eda.event.alert.labels.severity | default('unknown') }}"
+          labels: "{{ ansible_eda.event.alert.labels }}"
+          annotations: "{{ ansible_eda.event.alert.annotations | default({}) }}"
+        status_code: [200, 201, 202]
 ```
 
-Hace un POST a `webhook.site` con un JSON profesional que incluye el timestamp real.
+El playbook añade los datos de cada alerta a `/tmp/eventos.txt` y envía el payload JSON a webhook.site.
+El archivo está dentro del contenedor EDA.
 
 ### El inventario (`inventory.yml`)
 
@@ -733,35 +762,29 @@ Métrica anormal
 Prometheus evalúa la regla                 ✅
       │
       ▼
-PrometheusRule  (HighCPU / HighMemory)     ✅
+    PrometheusRule  (HighCPU / HighMemory / PodNotReady) ✅
       │
       ▼
 Alertmanager   enruta a `alertas-para-eda` ✅
-      │  POST a /alerts
+      │  POST a /endpoint
       ▼
 EDA            recibe el POST              ✅
       │  run_playbook
       ▼
 Ansible        ejecuta notify.yml          ✅
-      │  POST HTTP
+      │  POST HTTP a webhook.site
       ▼
-Webhook externo (webhook.site)             ✅
+    Webhook externo (webhook.site)
 ```
 
-**La cadena completa funciona de punta a punta.**
+    Para comprobar el archivo dentro del pod:
 
-### Limitación conocida: logs de EDA
+    ```bash
+    kubectl exec -n eda deploy/eda -- cat /tmp/eventos.txt
+    ```
 
-La imagen `quay.io/ansible/ansible-rulebook:v1.3.2` **no escribe a stdout**, así que aunque
-EDA reciba las alertas y ejecute el playbook, no se ve nada en `kubectl logs`. Alertmanager sí
-confirma que el POST llega (`Notify success`), y el webhook externo confirma que el playbook
-se ejecutó (`user-agent: ansible-httpget`).
-
-Opciones para tener visibilidad directa:
-
-1. **Cambiar la imagen a `quay.io/ansible/eda-server:latest`**, que sí imprime logs.
-2. **Cambiar la acción del rulebook** por algo aún más visible (escribir un fichero, mandar
-   un Slack, etc.).
+    `Notify success` en Alertmanager confirma el tramo Alertmanager → EDA. El resultado del playbook
+    y la solicitud externa se verifican en los logs de EDA y en la bandeja del token de webhook.site.
 
 ### Script de demo
 
@@ -789,6 +812,13 @@ por toda la cadena con salida formateada:
 * **SRE**: observabilidad, alerting y automatización de operaciones
 
 ### Trampas que costaron tiempo
+
+* `group_interval` y `repeat_interval` usan unidades explícitas (`30s`, no `30`). Para pruebas rápidas se pueden reducir; para uso normal, espaciar las repeticiones para no alcanzar límites del webhook externo.
+* `/tmp/eventos.txt` está en el filesystem efímero del contenedor EDA. Un reemplazo del pod lo elimina; usa un volumen si necesitas conservar el historial.
+* `Notify success` confirma que Alertmanager entregó el webhook a EDA, no que el playbook o el webhook externo terminaran correctamente.
+* EDA usa `event.meta.hosts` como límite para `run_playbook`. El filtro configurado excluye la clave `hosts`; Ansible ejecuta el playbook en `localhost`.
+
+Para el análisis detallado de las causas y su resolución, consulta [Informe del flujo de alertas](docs/informe-flujo-alertas.md).
 
 **`syncOptions` cambió de sitio en ArgoCD v3.** En v2.x era `spec.syncOptions`; desde v3 la
 ruta válida es `spec.syncPolicy.syncOptions`. Con el layout antiguo, el API server hace
@@ -824,11 +854,9 @@ chart en local en un segundo:
 helm template eda gitops/helm/eda
 ```
 
-**Los logs de `ansible-rulebook` pueden estar mudos.** La imagen
-`quay.io/ansible/ansible-rulebook:v1.3.2` no vuelca a stdout, así que aunque EDA reciba las
-alertas y ejecute el playbook, no hay forma de verlo desde `kubectl logs`. Se comprueba
-indirectamente mirando los logs de Alertmanager (`msg="Notify success"`) y el webhook externo
-(`user-agent: ansible-httpget`).
+**El archivo de eventos está en el contenedor.** `/tmp/eventos.txt` se puede consultar con
+`kubectl exec -n eda deploy/eda -- cat /tmp/eventos.txt`; al reemplazar el pod, el archivo temporal
+se pierde.
 
 **Un `run_playbook` necesita inventario, siempre.** Aunque solo haya un host (`localhost`),
 Ansible se niega a ejecutar sin un inventario declarado. El error es explícito al arrancar:
@@ -837,24 +865,13 @@ Ansible se niega a ejecutar sin un inventario declarado. El error es explícito 
 ERROR - Terminating: Rule Alerta de prueba has an action run_playbook which needs inventory to be defined
 ```
 
-La solución es doble: (1) añadir un `inventory.yml` al ConfigMap, y (2) pasarle a
-`ansible-rulebook` el flag `--inventory /rulebook/inventory.yml`.
+La solución es declarar el inventario en el ConfigMap y pasar a `ansible-rulebook` el flag
+`--inventory /rulebook/inventory.yml`.
 
-**EDA solo acepta POSTs en `/alerts`.** El source `ansible.eda.alertmanager` responde
-`405 Method Not Allowed` si le mandas un POST a la raíz (`/`). La URL del receptor de
-Alertmanager tiene que apuntar a `/alerts`:
+**Usar el endpoint del source de Alertmanager.** El receptor configurado apunta a `/endpoint`:
 
 ```yaml
-- url: http://eda.eda.svc.cluster.local:5000/alerts
-```
-
-Se detecta mirando la cabecera `Allow` de la respuesta:
-
-```bash
-kubectl run curl-test -n eda --rm -it --restart=Never --image=curlimages/curl -- \
-  curl -v -X POST http://eda:5000
-# < HTTP/1.1 405 Method Not Allowed
-# < Allow: GET,HEAD
+- url: http://eda.eda.svc.cluster.local:5000/endpoint
 ```
 
 **Un bucle de reconciliación puede *parecer* sano.** El mensaje de éxito del sync se refiere
