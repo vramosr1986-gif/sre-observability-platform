@@ -3,29 +3,40 @@ kind: ConfigMap
 metadata:
   name: eda-rulebook
 data:
-
   rulebook.yml: |
     ---
     - name: Reaccionar a alertas
       hosts: localhost
-
       sources:
-        - eda.builtin.webhook:
+        - ansible.eda.alertmanager:
             host: 0.0.0.0
             port: 5000
-
+          filters:
+            - eda.builtin.json_filter:
+                exclude_keys:
+                  - "meta.hosts"
       rules:
         - name: Alertas SRE
-          condition: event.payload.alerts is defined
+          condition: event.alert.labels.alertname is defined
           action:
             run_playbook:
               name: /rulebook/notify.yml
-
   inventory.yml: |
     all:
       hosts:
         localhost:
           ansible_connection: local
-
+        test:
+          ansible_connection: local
+        172.19.0.2:
+          ansible_connection: local
+        172.19.0.3:
+          ansible_connection: local
+        172.19.0.5:
+          ansible_connection: local
+        10.42.2.19:
+          ansible_connection: local
+        10.42.0.79:
+          ansible_connection: local
   notify.yml: |
 {{ .Files.Get "files/notify.yml" | indent 4 }}
