@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: false
   tasks:
-    - name: Hacer POST a webhook.site
+    - name: Hacer POST a webhook.site con alerta real
       ansible.builtin.uri:
         url: https://webhook.site/4325c6a4-6efa-4af8-84fc-592905101139
         method: POST
