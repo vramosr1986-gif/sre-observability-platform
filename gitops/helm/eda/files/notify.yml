@@ -3,18 +3,15 @@
   hosts: localhost
   gather_facts: false
   tasks:
-    - name: Hacer POST a webhook.site con alerta real
-      ansible.builtin.uri:
-        url: https://webhook.site/015924ce-3860-4a56-9ccf-05efe5ee384d
-        method: POST
-        body_format: json
-        body:
-          alerta: "{{ ansible_eda.event.alert.labels.alertname | default('desconocida') }}"
-          severidad: "{{ ansible_eda.event.alert.labels.severity | default('unknown') }}"
-          estado: "{{ ansible_eda.event.alert.status | default('unknown') }}"
-          rule: "{{ ansible_eda.rule | default('unknown') }}"
-          ruleset: "{{ ansible_eda.ruleset | default('unknown') }}"
-          recibido: "{{ ansible_eda.event.meta.received_at | default('unknown') }}"
-          uuid: "{{ ansible_eda.event.meta.uuid | default('unknown') }}"
-          timestamp: "{{ ansible_date_time.iso8601 | default('N/A') }}"
-        status_code: 200
+    - name: Guardar alerta en fichero
+      ansible.builtin.copy:
+        content: |
+          alerta: {{ ansible_eda.event.alert.labels.alertname | default('desconocida') }}
+          severidad: {{ ansible_eda.event.alert.labels.severity | default('unknown') }}
+          estado: {{ ansible_eda.event.alert.status | default('unknown') }}
+          rule: {{ ansible_eda.rule | default('unknown') }}
+          ruleset: {{ ansible_eda.ruleset | default('unknown') }}
+          recibido: {{ ansible_eda.event.meta.received_at | default('unknown') }}
+          uuid: {{ ansible_eda.event.meta.uuid | default('unknown') }}
+          timestamp: {{ ansible_date_time.iso8601 | default('N/A') }}
+        dest: /tmp/evento.txt
