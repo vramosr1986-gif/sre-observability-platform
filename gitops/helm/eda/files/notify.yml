@@ -3,7 +3,18 @@
   hosts: localhost
   gather_facts: false
   tasks:
-    - name: Guardar todas las variables
-      ansible.builtin.copy:
-        content: "{{ vars | to_nice_json }}"
-        dest: /tmp/vars.json
+    - name: Hacer POST a webhook.site
+      ansible.builtin.uri:
+        url: https://webhook.site/4325c6a4-6efa-4af8-84fc-592905101139
+        method: POST
+        body_format: json
+        body:
+          alerta: "{{ ansible_eda.event.alert.labels.alertname | default('desconocida') }}"
+          severidad: "{{ ansible_eda.event.alert.labels.severity | default('unknown') }}"
+          estado: "{{ ansible_eda.event.alert.status | default('unknown') }}"
+          rule: "{{ ansible_eda.rule | default('unknown') }}"
+          ruleset: "{{ ansible_eda.ruleset | default('unknown') }}"
+          recibido: "{{ ansible_eda.event.meta.received_at | default('unknown') }}"
+          uuid: "{{ ansible_eda.event.meta.uuid | default('unknown') }}"
+          timestamp: "{{ ansible_date_time.iso8601 | default('N/A') }}"
+        status_code: 200
