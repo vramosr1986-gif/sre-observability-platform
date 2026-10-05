@@ -59,7 +59,8 @@ Las cinco Applications gestionadas por GitOps, todas en estado `Synced` y `Healt
 
 ### Grafana — Dashboard
 
-Métricas de la infraestructura Kubernetes en Grafana.
+*Node Exporter Full* tras un rebuild desde cero: el datasource y el dashboard se provisionan
+desde Git, sin importar nada a mano.
 
 ![Grafana Dashboard](docs/screenshots/grafana-dashboard.jpeg)
 
