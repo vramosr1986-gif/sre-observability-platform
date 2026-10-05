@@ -49,6 +49,12 @@ command -v curl >/dev/null 2>&1 || {
     exit 1
 }
 
+docker info >/dev/null 2>&1 || {
+    echo "ERROR: Docker no está arrancado (k3d lo necesita)."
+    exit 1
+}
+
+echo "docker:  OK"
 echo "k3d:     OK"
 echo "kubectl: OK"
 echo "helm:    OK"
@@ -556,25 +562,16 @@ fi
 # 17. COMPROBAR EDA (INFORMATIVO)
 # ============================================================
 
-EDA_PORT=$(awk '$1=="eda" {print $2}' "${PORT_MAP_FILE}" 2>/dev/null || true)
+# No se envia un POST de prueba: el source de Alertmanager solo acepta su propio
+# formato en /endpoint. Basta con comprobar que el deployment esta disponible.
+echo ""
+echo "Comprobando EDA..."
 
-if [ -n "${EDA_PORT}" ]; then
-    echo ""
-    echo "Comprobando webhook EDA en http://localhost:${EDA_PORT} ..."
-
-    # Sin -f ni -s, y con timeout corto. Un fallo aqui no aborta el script.
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-        -X POST "http://localhost:${EDA_PORT}" \
-        -H "Content-Type: application/json" \
-        -d '{"message":"hola"}' \
-        --max-time 5 2>/dev/null || echo "000")
-
-    if [ "${HTTP_CODE}" = "200" ]; then
-        echo "  EDA webhook: OK (HTTP 200)"
-    else
-        echo "  EDA webhook: HTTP ${HTTP_CODE} (normal si el pod aun arranca)"
-        echo "  Revisa con:  kubectl logs -n eda deployment/eda"
-    fi
+if kubectl rollout status deployment/eda -n eda --timeout=60s >/dev/null 2>&1; then
+    echo "  EDA: OK (deployment disponible)"
+else
+    echo "  EDA: aun no disponible (normal si el pod esta arrancando)"
+    echo "  Revisa con:  kubectl logs -n eda deployment/eda"
 fi
 
 echo ""

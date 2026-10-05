@@ -52,7 +52,8 @@ print_wait() {
 # VARIABLES
 # ============================================================
 
-WEBHOOK_URL="https://webhook.site/4325c6a4-6efa-4af8-84fc-592905101139"
+WEBHOOK_URL="https://webhook.site/015924ce-3860-4a56-9ccf-05efe5ee384d"  # mismo token que files/notify.yml
+DEMO_INSTANCE="demo-eda-$(date +%H%M%S)"
 ALERTMANAGER_POD="alertmanager-prometheus-kube-prometheus-alertmanager-0"
 ALERTMANAGER_NS="observability"
 EDA_NS="eda"
@@ -97,10 +98,13 @@ echo ""
 print_step "3" "Inyectando alerta de prueba"
 # ------------------------------------------------------------
 
-print_info "Lanzando alerta ${BOLD}TestAlert${NC} con severidad ${BOLD}critical${NC}..."
+# Solo HighCPU, HighMemory y PodNotReady se enrutan a EDA; se usa HighCPU con
+# una instancia única para poder localizar el evento después.
+print_info "Lanzando alerta ${BOLD}HighCPU${NC} con instancia ${BOLD}${DEMO_INSTANCE}${NC}..."
 
 kubectl exec -n "$ALERTMANAGER_NS" "$ALERTMANAGER_POD" -c alertmanager -- \
-    amtool alert add alertname=TestAlert severity=critical \
+    amtool alert add alertname=HighCPU severity=warning instance="$DEMO_INSTANCE" \
+    --annotation=summary="Alerta inyectada por demo-eda.sh" \
     --alertmanager.url=http://localhost:9093 2>&1 | sed 's/^/      /'
 
 print_ok "Alerta inyectada en Alertmanager"
@@ -136,7 +140,24 @@ else
 fi
 
 # ------------------------------------------------------------
-print_step "6" "Resultado final"
+print_step "6" "Verificando que Ansible registró el evento"
+# ------------------------------------------------------------
+
+EVENTO=$(kubectl exec -n "$EDA_NS" deploy/eda -- cat /tmp/eventos.txt 2>/dev/null \
+    | grep -B3 -A6 "instancia: ${DEMO_INSTANCE}" || true)
+
+if [ -n "$EVENTO" ]; then
+    echo "$EVENTO" | sed 's/^/      /'
+    echo ""
+    print_ok "El playbook notify.yml registró la alerta en /tmp/eventos.txt"
+else
+    echo -e "  ${RED}✗ La alerta no aparece todavía en /tmp/eventos.txt${NC}"
+    print_info "Revisa los logs de EDA: kubectl logs -n $EDA_NS deploy/eda --tail=50"
+    exit 1
+fi
+
+# ------------------------------------------------------------
+print_step "7" "Resultado final"
 # ------------------------------------------------------------
 
 echo ""
